@@ -1,0 +1,2078 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nimble — Guía del lenguaje (v0.11)</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-soft: #171a21;
+    --panel: #1c2029;
+    --panel-2: #232833;
+    --border: #2c3240;
+    --text: #e6e9ef;
+    --muted: #9aa3b2;
+    --accent: #7cc4ff;
+    --accent-2: #b48cff;
+    --green: #6ee7a8;
+    --yellow: #ffd479;
+    --red: #ff7b8a;
+    --code-bg: #0b0d12;
+    --code-border: #262c39;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 16px;
+  }
+  .layout { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  aside {
+    width: 290px;
+    flex-shrink: 0;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    padding: 24px 16px 60px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  aside h1 {
+    font-size: 1.15rem;
+    margin: 0 0 4px;
+    letter-spacing: 0.5px;
+  }
+  aside .sub {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-bottom: 18px;
+    display: block;
+  }
+  aside nav a {
+    display: block;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.86rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+    transition: 0.15s;
+  }
+  aside nav a:hover {
+    color: var(--text);
+    background: var(--panel);
+    border-left-color: var(--accent);
+  }
+  aside nav .group {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #556;
+    margin: 18px 10px 6px;
+  }
+
+  /* Main */
+  main {
+    flex: 1;
+    max-width: 980px;
+    padding: 48px 56px 120px;
+    min-width: 0;
+  }
+  h1.title {
+    font-size: 2.4rem;
+    margin: 0 0 6px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .tagline { color: var(--muted); margin: 0 0 40px; font-size: 1.05rem; }
+
+  h2 {
+    font-size: 1.5rem;
+    margin: 56px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    scroll-margin-top: 20px;
+  }
+  h3 { font-size: 1.15rem; margin: 32px 0 10px; color: var(--accent); }
+  h4 { font-size: 0.98rem; margin: 22px 0 8px; color: var(--accent-2); }
+  p { margin: 10px 0; }
+  a { color: var(--accent); }
+
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.86em;
+    background: var(--panel-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #ffd9a0;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 0.86rem;
+    line-height: 1.6;
+    margin: 14px 0;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    color: #d8dee9;
+    font-size: 1em;
+  }
+  .cmt { color: #6b7280; font-style: italic; }
+  .kw  { color: #ff79c6; }
+  .str { color: #a6e3a1; }
+  .num { color: #f9e2af; }
+  .fn  { color: #89b4fa; }
+  .op  { color: #f38ba8; }
+
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: rgba(124, 196, 255, 0.06);
+    padding: 12px 18px;
+    border-radius: 0 8px 8px 0;
+    margin: 18px 0;
+    font-size: 0.94rem;
+  }
+  .callout.warn { border-color: var(--yellow); background: rgba(255, 212, 121, 0.06); }
+  .callout.danger { border-color: var(--red); background: rgba(255, 123, 138, 0.06); }
+  .callout.tip { border-color: var(--green); background: rgba(110, 231, 168, 0.06); }
+  .callout strong { color: var(--accent); }
+  .callout.warn strong { color: var(--yellow); }
+  .callout.danger strong { color: var(--red); }
+  .callout.tip strong { color: var(--green); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.9rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  th { color: var(--accent); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  td code { font-size: 0.82em; }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+    margin-left: 8px;
+  }
+  .badge.new { background: rgba(110, 231, 168, 0.15); color: var(--green); }
+  .badge.v9 { background: rgba(124, 196, 255, 0.15); color: var(--accent); }
+  .badge.v8 { background: rgba(255, 123, 138, 0.15); color: var(--red); }
+  .badge.c { background: rgba(180, 140, 255, 0.15); color: var(--accent-2); }
+  .badge.fix { background: rgba(255, 123, 138, 0.18); color: var(--red); }
+
+  footer {
+    margin-top: 80px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 900px) {
+    aside { display: none; }
+    main { padding: 28px 20px 80px; }
+    h1.title { font-size: 1.8rem; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<aside>
+  <h1>Nimble <span style="color:var(--muted);font-weight:400">v0.11</span></h1>
+  <span class="sub">Guía del lenguaje</span>
+  <nav>
+    <div class="group">Empezando</div>
+    <a href="#novedades-recientes">Novedades de v0.10 / v0.11</a>
+    <a href="#novedades">Novedades de v0.9</a>
+    <a href="#intro">Introducción</a>
+    <a href="#compilar">Compilar y ejecutar</a>
+    <a href="#repl">REPL</a>
+    <a href="#cli">CLI y argumentos</a>
+
+    <div class="group">Lenguaje</div>
+    <a href="#comentarios">Comentarios</a>
+    <a href="#variables">Variables y constantes</a>
+    <a href="#tipos">Tipos de datos</a>
+    <a href="#strings">Strings e interpolación</a>
+    <a href="#operadores">Operadores</a>
+    <a href="#control">Control de flujo</a>
+    <a href="#funciones">Funciones</a>
+    <a href="#listas">Listas</a>
+    <a href="#mapas">Mapas y objetos</a>
+    <a href="#clases">Clases</a>
+    <a href="#enum">Enums y structs</a>
+    <a href="#match">Match</a>
+    <a href="#errores">Errores y excepciones</a>
+    <a href="#modulos">Módulos</a>
+
+    <div class="group">Biblioteca estándar</div>
+    <a href="#globals">Funciones globales</a>
+    <a href="#math">math</a>
+    <a href="#random">random</a>
+    <a href="#time">time</a>
+    <a href="#system">system</a>
+    <a href="#json">json</a>
+    <a href="#path">path</a>
+    <a href="#regex">regex</a>
+    <a href="#hex">hex</a>
+    <a href="#env">env</a>
+    <a href="#csv">csv</a>
+    <a href="#http">http</a>
+    <a href="#net">net <span class="badge new" style="margin-left:4px">nuevo</span></a>
+    <a href="#archivos">Archivos (I/O)</a>
+    <a href="#gc">gc (recolector de ciclos)</a>
+
+    <div class="group">Extras</div>
+    <a href="#tests">Framework de tests</a>
+
+    <div class="group">Embebido en C++</div>
+    <a href="#embed-intro">Introducción</a>
+    <a href="#embed-basico">Uso básico</a>
+    <a href="#embed-nativas">Funciones nativas</a>
+    <a href="#embed-call">Llamar al script</a>
+    <a href="#embed-sandbox">Sandbox y permisos</a>
+    <a href="#embed-limites">Límites de ejecución</a>
+    <a href="#embed-modulos">Módulos embebidos</a>
+    <a href="#embed-valores">Trabajar con Value</a>
+    <a href="#embed-gc">Recolector de ciclos</a>
+  </nav>
+</aside>
+
+<main>
+
+<h1 class="title">Nimble</h1>
+<p class="tagline">Lenguaje de scripting interpretado, sencillo y embebible. Guía completa v0.11.</p>
+
+<!-- ============================================================= -->
+<h2 id="novedades-recientes">Novedades de v0.10 / v0.11 <span class="badge new">nuevo</span></h2>
+<p>
+  Resumen de lo que cambió después de v0.9 (más abajo queda el detalle histórico de la
+  auditoría de v0.9). Si vienes de v0.9, esto es lo nuevo:
+</p>
+
+<h3>Módulo <code>net</code>: sockets TCP/UDP <span class="badge new">v0.10</span></h3>
+<p>
+  Nuevo módulo <code>net</code> con sockets TCP y UDP crudos, bloqueantes y sin
+  dependencias externas (BSD sockets en Linux/macOS, Winsock2 en Windows). Pensado para
+  mini-servidores de prueba, protocolos de juego simples o probar un cliente a mano.
+  Ver la sección completa <a href="#net">net</a> más abajo.
+</p>
+<pre><code><span class="kw">use</span> net
+
+srv = net.tcp_listen(<span class="str">"127.0.0.1"</span>, <span class="num">9000</span>)
+conn = srv.accept()
+print(conn.recv())
+conn.send(<span class="str">"ok\r\n"</span>)</code></pre>
+<div class="callout warn">
+  <strong>Bug corregido durante esta actualización:</strong> igual que le pasó a
+  <code>gc</code> en v0.9 (ver más abajo), <code>net</code> se registró como módulo nativo
+  pero se olvidó agregarlo a la lista interna que usa la sentencia <code>use</code> para
+  reconocer módulos nativos. El síntoma era idéntico:
+  <code>use net</code> fallaba con <code>Could not import module 'net.nimble' (not found:
+  net.nimble)</code>, como si <code>use</code> intentara cargarlo como archivo del
+  proyecto. Ya está corregido — <code>use net</code>, <code>use net as n</code> y
+  <code>use net (tcp_connect, resolve)</code> funcionan los tres.
+</div>
+
+<h3>Escape <code>\r</code> en strings <span class="badge new">v0.11</span></h3>
+<p>
+  Antes, el único juego de escapes reconocido dentro de un string entre comillas era
+  <code>\n</code>, <code>\t</code>, <code>\"</code>, <code>\\</code>, <code>\{</code> y
+  <code>\}</code>. <code>\r</code> no estaba en esa lista, así que caía al caso por
+  defecto y quedaba tal cual — <strong>dos caracteres literales</strong>, la barra
+  invertida y la <code>r</code> — en vez de convertirse en un retorno de carro real
+  (<code>0x0D</code>). Esto pasaba desapercibido en la mayoría del código, pero se volvió
+  un problema real con la llegada de <code>net</code>: muchos protocolos de texto sobre
+  sockets (HTTP a mano, SMTP, IRC, líneas terminadas en CRLF) necesitan
+  <code>"\r\n"</code> exacto para separar líneas.
+</p>
+<pre><code><span class="cmt"># Antes de v0.11:
+s = "linea1\r\nlinea2"
+length(s)     # 16 -- \r quedaba como los DOS caracteres '\' y 'r', no como 0x0D
+
+# Desde v0.11, \r es un escape real:</span>
+s = <span class="str">"linea1\r\nlinea2"</span>
+length(s)     <span class="cmt"># 15 -- \r es un solo byte (0x0D), como \n</span>
+
+<span class="cmt"># Útil para protocolos de línea sobre net.*:</span>
+<span class="kw">use</span> net
+c = net.tcp_connect(<span class="str">"example.com"</span>, <span class="num">80</span>)
+c.send(<span class="str">"GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"</span>)</code></pre>
+<div class="callout danger">
+  <strong>Si dependías del comportamiento viejo:</strong> algún código que escribía
+  <code>"\r"</code> esperando literalmente la barra invertida y la letra <code>r</code>
+  (en vez de un retorno de carro) ahora obtiene un byte distinto y probablemente una
+  string un carácter más corta. Es poco probable que algo dependiera de ese bug a
+  propósito, pero si tenías tests que comparaban longitudes exactas de strings con
+  <code>\r</code> sin escapar como raw string (<code>r"..."</code>), revísalos.
+</div>
+
+<h3>Otras adiciones de biblioteca estándar <span class="badge new">v0.10</span></h3>
+<ul>
+  <li><code>string.starts_with(prefijo)</code> / <code>string.ends_with(sufijo)</code> —
+      lo único que faltaba en los chequeos de string; <code>contains()</code> y
+      <code>find()</code> no sirven para esto porque no anclan a una posición.</li>
+  <li><code>list.index_of(valor)</code> — posición de un valor dentro de una lista (o
+      <code>-1</code> si no está), sin escribir el bucle a mano. Usa la misma igualdad
+      estructural que ya usan <code>==</code> y <code>in</code>.</li>
+  <li><code>math.round(x, decimales)</code> — redondeo a N decimales, como función nueva
+      en <code>math</code> en vez de un segundo argumento en el <code>round()</code>
+      global (que sigue funcionando igual que siempre, de un solo argumento).</li>
+  <li><code>path.basename()</code> / <code>path.dirname()</code> — reescritos sobre
+      <code>std::filesystem::path</code>. Antes buscaban <code>'/'</code> a mano, así que
+      una ruta estilo Windows (<code>C:\Users\foo\bar.txt</code>) en Linux/macOS
+      devolvía la ruta completa como si fuera el "basename". Ahora entienden ambos
+      separadores.</li>
+</ul>
+<pre><code><span class="kw">use</span> math
+
+<span class="str">"nimble.txt"</span>.starts_with(<span class="str">"nim"</span>)   <span class="cmt"># true</span>
+<span class="str">"nimble.txt"</span>.ends_with(<span class="str">".txt"</span>)   <span class="cmt"># true</span>
+
+[<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>].index_of(<span class="num">20</span>)   <span class="cmt"># 1</span>
+[<span class="num">10</span>, <span class="num">20</span>, <span class="num">30</span>].index_of(<span class="num">99</span>)   <span class="cmt"># -1</span>
+
+math.round(<span class="num">3.14159</span>, <span class="num">2</span>)   <span class="cmt"># 3.14</span>
+round(<span class="num">3.14159</span>)          <span class="cmt"># 3  (global round(), sin cambios: siempre 0 decimales)</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="novedades">Novedades de v0.9 <span class="badge fix">correcciones</span></h2>
+<p>
+  La v0.9 nació de una auditoría de la propia documentación: se probó <em>cada ejemplo
+  documentado</em> contra el intérprete real, y eso encontró varios bugs — tres de
+  comportamiento/API, y dos más graves de estabilidad que salieron a la luz al revisar el
+  código fuente en detalle. Si vienes de v0.8, esto es lo que cambia para ti:
+</p>
+
+<h3>1. <code>json.decode()</code> ya no puede tirar el proceso <span class="badge fix">crash corregido</span></h3>
+<p>
+  Antes, un <code>json.decode(...)</code> con entrada malformada — incluyendo casos tan
+  simples como <code>"{}"</code> en ciertas rutas — podía terminar en un
+  <code>std::terminate</code> sin que <code>try/catch</code> pudiera hacer nada, porque el
+  error escapaba como una excepción de C++ no relacionada con Nimble
+  (<code>std::invalid_argument</code>) en vez de un <code>NimbleError</code> capturable.
+</p>
+<p>
+  La causa raíz estaba en la interpolación de strings: cuando el contenido entre
+  <code>{ }</code> no lograba parsear como expresión, en vez de fallar se sustituía
+  silenciosamente un texto de relleno, y ese texto era lo que después llegaba sin protección
+  al parser de números de <code>json.decode</code>. Ahora ambas cosas están arregladas:
+</p>
+<ul>
+  <li>Una interpolación inválida lanza un <code>NimbleError</code> capturable, en vez de
+      producir un resultado silenciosamente incorrecto.</li>
+  <li><code>json.decode()</code> valida números, <code>true</code>, <code>false</code> y
+      <code>null</code> antes de consumirlos, así que ninguna entrada puede tirar el
+      proceso — como mucho lanza un <code>NimbleError</code> normal.</li>
+  <li><code>json.decode()</code> también exige que las claves de un objeto sean strings
+      (como manda el propio estándar JSON): una entrada como <code>{1: 2}</code> antes
+      llegaba a intentar leer la clave como string y crasheaba igual que el caso de
+      números malformados; ahora se rechaza con un <code>NimbleError</code> claro.</li>
+</ul>
+<pre><code><span class="cmt"># Antes de v0.9 esto podía crashear el proceso entero.
+# Ahora simplemente lanza un error capturable:</span>
+<span class="kw">use</span> json
+
+<span class="kw">try</span>
+    obj = json.decode(<span class="str">"{esto no es json válido}"</span>)
+<span class="kw">catch</span> err
+    print(<span class="str">"JSON inválido: {err}"</span>)
+<span class="kw">end</span>
+
+<span class="cmt"># También afecta a la interpolación: una expresión rota entre { }
+# ahora es un error, no un texto de relleno silencioso.</span>
+<span class="kw">try</span>
+    x = <span class="str">"resultado: {1 +}"</span>   <span class="cmt"># expresión inválida dentro de { }</span>
+<span class="kw">catch</span> err
+    print(<span class="str">"Interpolación inválida: {err}"</span>)
+<span class="kw">end</span></code></pre>
+
+<h3>2. <code>Value(42)</code> y <code>Value("texto")</code> ya hacen lo que parecen hacer <span class="badge fix">API de embebido</span></h3>
+<p>
+  Esto solo afecta a código C++ que embebe Nimble (ver <a href="#embed-valores">Trabajar con
+  Value</a>), pero era una trampa seria: antes de v0.9, <code>Value(42)</code> ni siquiera
+  compilaba (ambigüedad entre <code>Value(double)</code> y <code>Value(bool)</code>), y
+  <code>Value("texto")</code> compilaba <strong>sin error</strong> pero producía un booleano
+  <code>true</code> — porque la conversión de puntero a <code>bool</code> gana la resolución
+  de sobrecarga frente a la conversión (definida por el usuario) de <code>const char*</code> a
+  <code>std::string</code>. Cualquier ejemplo de la documentación que escribiera un literal
+  directamente estaba afectado.
+</p>
+<pre><code><span class="cmt">// Antes de v0.9:
+Value(42)        // ERROR de compilación (ambiguo)
+Value("hola")     // compila, pero es Value(true) -- ¡un booleano!, no el string "hola"
+
+// A partir de v0.9, ambos hacen lo esperado:</span>
+Value n(<span class="num">42</span>);          <span class="cmt">// number: 42</span>
+Value s(<span class="str">"hola"</span>);       <span class="cmt">// string: "hola"</span></code></pre>
+<div class="callout warn">
+  <strong>Si tienes código de embebido de antes de v0.9:</strong> revisa cualquier
+  <code>Value("literal")</code> que hayas escrito directamente con una cadena entre comillas.
+  Antes tenías que envolverlo como <code>Value(std::string("literal"))</code> para que
+  funcionara; ahora ambas formas dan el mismo resultado correcto, pero si tu código dependía
+  (a propósito o sin darse cuenta) del valor <code>true</code> que producía el bug, ese
+  comportamiento ya no ocurre.
+</div>
+
+<h3>3. <code>for i, x in enumerate(lista)</code> ya funciona <span class="badge fix">bug de comportamiento</span></h3>
+<p>
+  El <code>for</code> con dos variables ya funcionaba correctamente sobre mapas
+  (<code>for clave, valor in mapa</code>), pero sobre una <em>lista</em> de pares —como la
+  que produce <code>enumerate()</code>— antes solo asignaba el <strong>par completo</strong>
+  a la primera variable y dejaba la segunda sin definir. Esto rompía silenciosamente el
+  idioma más común para usar dos variables de bucle. Ahora, sobre una lista, el
+  <code>for</code> con dos variables destructura cada elemento (asumiendo que es una lista de
+  2 elementos) en las dos variables, igual que ya hacía con mapas.
+</p>
+<pre><code>nombres = [<span class="str">"ana"</span>, <span class="str">"luis"</span>, <span class="str">"eva"</span>]
+
+<span class="cmt"># Antes de v0.9: `i` recibía [0, "ana"] completo y `x` quedaba indefinida.
+# Desde v0.9: `i` recibe 0 y `x` recibe "ana", como cabría esperar.</span>
+<span class="kw">for</span> i, x <span class="kw">in</span> enumerate(nombres)
+    print(<span class="str">"{i}: {x}"</span>)
+<span class="kw">end</span>
+<span class="cmt"># 0: ana
+# 1: luis
+# 2: eva</span>
+
+<span class="cmt"># También funciona con cualquier lista de pares hecha a mano:</span>
+<span class="kw">for</span> clave, valor <span class="kw">in</span> [[<span class="str">"a"</span>, <span class="num">1</span>], [<span class="str">"b"</span>, <span class="num">2</span>]]
+    print(<span class="str">"{clave} = {valor}"</span>)
+<span class="kw">end</span></code></pre>
+<div class="callout">
+  Si un elemento de la lista no tiene exactamente 2 elementos, se lanza un
+  <code>NimbleError</code> explicando que cada ítem debe ser una lista de 2 elementos
+  (como la que produce <code>enumerate()</code>), en vez de fallar en silencio.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="intro">Introducción</h2>
+<p>
+  <strong>Nimble</strong> es un intérprete de scripting escrito en C++17. Su sintaxis es limpia,
+  con bloques terminados en <code>end</code> (al estilo Ruby/Lua), tipado dinámico y una
+  biblioteca estándar práctica. Está diseñado para dos usos:
+</p>
+<ul>
+  <li><strong>Como CLI:</strong> ejecutar scripts <code>.nimble</code> desde la terminal o en un REPL interactivo.</li>
+  <li><strong>Embebido en C++:</strong> incrustarlo en un juego, herramienta o aplicación para
+      permitir scripting por parte del usuario, con control total de permisos y límites.</li>
+</ul>
+
+<div class="callout tip">
+  <strong>Filosofía:</strong> bloques claros, cero magia, y una API de embebido pequeña y explícita.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="compilar">Compilar y ejecutar</h2>
+
+<p>Nimble es un único archivo <code>nimble.cpp</code>. No requiere dependencias externas salvo
+  <code>libcurl</code> si quieres usar <code>http</code>.</p>
+
+<h3>Compilación básica (CLI)</h3>
+<pre><code><span class="cmt"># Linux / macOS</span>
+g++ -std=c++17 -O2 nimble.cpp -o nimble
+
+<span class="cmt"># Con soporte HTTP</span>
+g++ -std=c++17 -O2 -DHAVE_CURL nimble.cpp -o nimble -lcurl
+
+<span class="cmt"># Windows (MinGW)</span>
+g++ -std=c++17 -O2 nimble.cpp -o nimble.exe</code></pre>
+
+<h3>Ejecutar un script</h3>
+<pre><code>./nimble mi_script.nimble
+./nimble run mi_script.nimble arg1 arg2
+./nimble test mi_script.nimble          <span class="cmt"># ejecuta los tests definidos</span>
+./nimble --no-warn mi_script.nimble     <span class="cmt"># desactiva advertencias</span></code></pre>
+
+<p>Los argumentos posteriores al nombre del archivo quedan disponibles en el script como
+  <code>system.args</code> (una lista).</p>
+
+<!-- ============================================================= -->
+<h2 id="repl">REPL interactivo</h2>
+<p>Si ejecutas <code>nimble</code> sin argumentos, entra en modo interactivo:</p>
+<pre><code>$ ./nimble
+Nimble REPL (v0.9) -- type 'exit' to quit
+&gt; 2 + 2
+4
+&gt; func saludar(nombre) return "Hola, " + nombre end
+&gt; saludar("mundo")
+Hola, mundo
+&gt; exit</code></pre>
+<p>Puedes escribir bloques multilínea; el prompt cambia a <code>...</code> hasta cerrarlos.
+  También puedes salir con <code>exit()</code> o <code>salir</code>.</p>
+
+<!-- ============================================================= -->
+<h2 id="cli">CLI y argumentos</h2>
+<table>
+  <tr><th>Comando</th><th>Descripción</th></tr>
+  <tr><td><code>nimble archivo.nimble</code></td><td>Ejecuta el script.</td></tr>
+  <tr><td><code>nimble run archivo.nimble [args...]</code></td><td>Ejecuta pasando argumentos.</td></tr>
+  <tr><td><code>nimble test archivo.nimble</code></td><td>Ejecuta los bloques <code>test "..."</code>.</td></tr>
+  <tr><td><code>nimble --no-warn archivo.nimble</code></td><td>Silencia advertencias del parser.</td></tr>
+</table>
+
+<!-- ============================================================= -->
+<h2 id="comentarios">Comentarios</h2>
+<p>Solo existe comentario de línea, con <code>#</code>:</p>
+<pre><code><span class="cmt"># Esto es un comentario</span>
+x = 5   <span class="cmt"># comentario al final de línea</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="variables">Variables y constantes</h2>
+<p>Las variables se crean por asignación simple. No hay palabra clave <code>var</code>.</p>
+<pre><code>nombre = <span class="str">"Ana"</span>
+edad = <span class="num">30</span>
+activo = <span class="kw">true</span>
+
+<span class="cmt"># Constantes (no se pueden reasignar)</span>
+<span class="kw">const</span> PI = <span class="num">3.14159</span>
+
+<span class="cmt"># Asignación múltiple</span>
+a, b = <span class="num">1</span>, <span class="num">2</span>
+
+<span class="cmt"># Destructuring de listas</span>
+[primero, segundo] = [<span class="num">10</span>, <span class="num">20</span>]
+
+<span class="cmt"># Destructuring de mapas</span>
+{nombre, edad} = {nombre: <span class="str">"Luis"</span>, edad: <span class="num">25</span>}</code></pre>
+
+<div class="callout warn">
+  <strong>Declaración de tipo opcional:</strong> puedes escribir <code>x: number = 5</code>
+  pero el tipo es puramente informativo (no se valida en runtime).
+</div>
+
+<!-- ============================================================= -->
+<h2 id="tipos">Tipos de datos</h2>
+<table>
+  <tr><th>Tipo</th><th>Ejemplo</th><th>Notas</th></tr>
+  <tr><td><code>number</code></td><td><code>42</code>, <code>3.14</code>, <code>0xFF</code>, <code>0b1010</code></td><td>Coma flotante de doble precisión.</td></tr>
+  <tr><td><code>string</code></td><td><code>"hola"</code>, <code>"""..."""</code>, <code>r"raw"</code></td><td>Interpolación con <code>{expr}</code>.</td></tr>
+  <tr><td><code>boolean</code></td><td><code>true</code>, <code>false</code></td><td></td></tr>
+  <tr><td><code>null</code></td><td><code>null</code></td><td>Ausencia de valor.</td></tr>
+  <tr><td><code>list</code></td><td><code>[1, 2, 3]</code></td><td>Indexable, mutable.</td></tr>
+  <tr><td><code>map</code></td><td><code>{a: 1, b: 2}</code></td><td>Claves string, orden de inserción preservado.</td></tr>
+  <tr><td><code>function</code></td><td><code>func(x) return x end</code></td><td>Ciudadanos de primera clase.</td></tr>
+  <tr><td><code>object</code></td><td><code>object ... end</code></td><td>Estructura dinámica.</td></tr>
+  <tr><td><code>class</code></td><td><code>class X ... end</code></td><td>Con herencia simple.</td></tr>
+</table>
+
+<p>Puedes comprobar el tipo con <code>type(valor)</code>:</p>
+<pre><code>type(<span class="num">3</span>)         <span class="cmt"># "number"</span>
+type(<span class="str">"hola"</span>)    <span class="cmt"># "string"</span>
+type([<span class="num">1</span>,<span class="num">2</span>])     <span class="cmt"># "list"</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="strings">Strings e interpolación</h2>
+
+<h3>Strings normales</h3>
+<pre><code>s = <span class="str">"Hola\nmundo"</span>
+escaped = <span class="str">"comillas \" y barra \\"</span></code></pre>
+<p>Escapes: <code>\n</code>, <code>\t</code>, <code>\r</code>
+   <span class="badge new">v0.11</span>, <code>\"</code>, <code>\\</code>,
+   <code>\{</code>, <code>\}</code>.</p>
+<div class="callout">
+  <code>\r</code> es escape real recién desde v0.11 — antes quedaba como los dos
+  caracteres literales <code>\</code> y <code>r</code>. Útil sobre todo para armar
+  líneas <code>"...\r\n"</code> al hablar protocolos de texto con el nuevo módulo
+  <a href="#net">net</a>.
+</div>
+
+<h3>Strings multilínea <span class="badge new">v0.5</span></h3>
+<pre><code>texto = <span class="str">"""
+Línea 1
+Línea 2
+"""</span></code></pre>
+
+<h3>Strings crudos (raw)</h3>
+<pre><code>ruta = <span class="str">r"C:\Users\test\nada"</span>   <span class="cmt"># sin escapes, sin interpolación</span></code></pre>
+
+<h3>Interpolación</h3>
+<p>Dentro de un string normal, <code>{expr}</code> evalúa y muestra el valor:</p>
+<pre><code>nombre = <span class="str">"Ana"</span>
+edad = <span class="num">30</span>
+print(<span class="str">"Hola {nombre}, tienes {edad} años"</span>)
+print(<span class="str">"2 + 2 = {2 + 2}"</span>)
+print(<span class="str">"mayúsculas: {nombre.upper()}"</span>)</code></pre>
+
+<div class="callout">
+  Si quieres llaves literales, escápalas: <code>"\{no interpolado\}"</code>.
+</div>
+
+<div class="callout warn">
+  <strong>Errores de interpolación</strong> <span class="badge fix">v0.9</span>: si lo que
+  hay entre <code>{ }</code> no es una expresión válida, se lanza un
+  <code>NimbleError</code> capturable con <code>try/catch</code> — antes de v0.9 se
+  sustituía silenciosamente por un texto de relleno, lo que podía producir strings
+  incorrectos sin avisar (y en combinación con <code>json.decode</code>, incluso crashear
+  el proceso).
+  <pre style="margin:10px 0 0"><code><span class="kw">try</span>
+    x = <span class="str">"total: {1 + }"</span>   <span class="cmt"># expresión inválida</span>
+<span class="kw">catch</span> err
+    print(<span class="str">"expresión de interpolación inválida: {err}"</span>)
+<span class="kw">end</span></code></pre>
+</div>
+
+<h3>Miembros de string</h3>
+<table>
+  <tr><th>Miembro</th><th>Descripción</th></tr>
+  <tr><td><code>s.length</code></td><td>Longitud.</td></tr>
+  <tr><td><code>s.upper()</code>, <code>s.lower()</code></td><td>Mayúsculas / minúsculas.</td></tr>
+  <tr><td><code>s.trim()</code></td><td>Quita espacios en extremos.</td></tr>
+  <tr><td><code>s.find(sub, [start])</code></td><td>Posición o <code>-1</code>.</td></tr>
+  <tr><td><code>s.contains(sub)</code></td><td>Devuelve boolean.</td></tr>
+  <tr><td><code>s.starts_with(prefijo)</code> <span class="badge new">v0.10</span></td><td>Boolean; ancla al inicio del string.</td></tr>
+  <tr><td><code>s.ends_with(sufijo)</code> <span class="badge new">v0.10</span></td><td>Boolean; ancla al final del string.</td></tr>
+  <tr><td><code>s.replace(from, to)</code></td><td>Reemplaza todas.</td></tr>
+  <tr><td><code>s.split(sep)</code></td><td>Devuelve lista.</td></tr>
+  <tr><td><code>s[i]</code>, <code>s[a:b]</code></td><td>Índice y slice.</td></tr>
+</table>
+
+<!-- ============================================================= -->
+<h2 id="operadores">Operadores</h2>
+
+<h3>Aritméticos</h3>
+<table>
+  <tr><td><code>+</code></td><td>Suma / concatena strings / une listas</td></tr>
+  <tr><td><code>-</code> <code>*</code> <code>/</code> <code>%</code></td><td>Resta, multiplicación, división, módulo</td></tr>
+  <tr><td><code>**</code></td><td>Potencia (<code>2 ** 8 == 256</code>)</td></tr>
+</table>
+
+<h3>Comparación</h3>
+<p><code>==</code> y <code>!=</code> comparan <em>estructuralmente</em> (listas y mapas incluidos).
+   <code>===</code> y <code>!==</code> comparan <em>identidad</em> de referencia.</p>
+<pre><code>[<span class="num">1</span>,<span class="num">2</span>] == [<span class="num">1</span>,<span class="num">2</span>]     <span class="cmt"># true  (estructural)</span>
+[<span class="num">1</span>,<span class="num">2</span>] === [<span class="num">1</span>,<span class="num">2</span>]    <span class="cmt"># false (distintas listas)</span>
+
+a = [<span class="num">1</span>,<span class="num">2</span>]
+b = a
+a === b                <span class="cmt"># true  (misma referencia)</span></code></pre>
+
+<h3>Lógicos</h3>
+<p><code>and</code>, <code>or</code>, <code>not</code>. Devuelven el valor, no solo un boolean
+   (útil para valores por defecto).</p>
+
+<h3>Pertenencia</h3>
+<p><code>x in lista</code>, <code>"sub" in "string"</code>, <code>"clave" in mapa</code>.</p>
+
+<h3>Operadores especiales</h3>
+<table>
+  <tr><td><code>??</code></td><td>Null coalescing: <code>a ?? b</code> devuelve <code>b</code> si <code>a</code> es null</td></tr>
+  <tr><td><code>?.</code> <code>?[</code></td><td>Acceso opcional: corta la cadena a <code>null</code> si el valor es null</td></tr>
+  <tr><td><code>...x</code></td><td>Spread (en listas, mapas y llamadas)</td></tr>
+</table>
+
+<pre><code>usuario = <span class="kw">null</span>
+nombre = usuario?.nombre ?? <span class="str">"invitado"</span>   <span class="cmt"># "invitado"</span>
+
+<span class="cmt"># Spread en listas</span>
+a = [<span class="num">1</span>, <span class="num">2</span>]
+b = [<span class="num">0</span>, ...a, <span class="num">3</span>]              <span class="cmt"># [0, 1, 2, 3]</span>
+
+<span class="cmt"># Spread en mapas</span>
+base = {a: <span class="num">1</span>}
+ext = {...base, b: <span class="num">2</span>}        <span class="cmt"># {a: 1, b: 2}</span>
+
+<span class="cmt"># Spread en llamadas</span>
+nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+print(max(...nums))</code></pre>
+
+<h3>Asignación compuesta</h3>
+<p><code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code>, <code>%=</code>:</p>
+<pre><code>x = <span class="num">10</span>
+x += <span class="num">5</span>     <span class="cmt"># 15</span>
+x *= <span class="num">2</span>     <span class="cmt"># 30</span>
+s = <span class="str">"a"</span>
+s += <span class="str">"b"</span>    <span class="cmt"># "ab"</span>
+lst = [<span class="num">1</span>]
+lst += [<span class="num">2</span>] <span class="cmt"># [1, 2]</span></code></pre>
+
+<h3>Operador ternario</h3>
+<pre><code>estado = <span class="str">"adulto"</span> <span class="kw">if</span> edad &gt;= <span class="num">18</span> <span class="kw">else</span> <span class="str">"menor"</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="control">Control de flujo</h2>
+
+<h3>if / elif / else</h3>
+<pre><code><span class="kw">if</span> edad &lt; <span class="num">13</span>
+    print(<span class="str">"niño"</span>)
+<span class="kw">elif</span> edad &lt; <span class="num">18</span>
+    print(<span class="str">"adolescente"</span>)
+<span class="kw">else</span>
+    print(<span class="str">"adulto"</span>)
+<span class="kw">end</span></code></pre>
+
+<div class="callout tip">
+  <strong>Bloques en una línea</strong> <span class="badge new">v0.5</span>: puedes escribir
+  el cuerpo en la misma línea.
+  <pre style="margin:10px 0 0"><code><span class="kw">if</span> x &gt; <span class="num">0</span> return <span class="str">"positivo"</span> <span class="kw">end</span></code></pre>
+</div>
+
+<h3>while</h3>
+<pre><code>i = <span class="num">0</span>
+<span class="kw">while</span> i &lt; <span class="num">5</span>
+    print(i)
+    i += <span class="num">1</span>
+<span class="kw">end</span></code></pre>
+
+<h3>for</h3>
+<p>
+  La forma con <strong>una variable</strong> funciona sobre listas, strings (carácter a
+  carácter) y mapas (recorriendo las claves):
+</p>
+<pre><code><span class="kw">for</span> x <span class="kw">in</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+    print(x)
+<span class="kw">end</span>
+
+<span class="cmt"># Iterar sobre strings, carácter a carácter</span>
+<span class="kw">for</span> c <span class="kw">in</span> <span class="str">"abc"</span>
+    print(c)
+<span class="kw">end</span>
+
+<span class="cmt"># Iterar sobre mapa: una var = solo las claves</span>
+edades = {ana: <span class="num">30</span>, luis: <span class="num">25</span>}
+<span class="kw">for</span> nombre <span class="kw">in</span> edades
+    print(nombre)     <span class="cmt"># "ana", luego "luis"</span>
+<span class="kw">end</span></code></pre>
+
+<p>
+  La forma con <strong>dos variables</strong> (<code>for a, b in ...</code>) sirve para dos
+  casos distintos, según el tipo de lo que iteres:
+</p>
+<ul>
+  <li>Sobre un <strong>mapa</strong>: <code>a</code> recibe la clave y <code>b</code> el valor.</li>
+  <li>Sobre una <strong>lista</strong>: cada elemento debe ser en sí mismo una lista de
+      2 elementos (un "par"), y ese par se destructura en <code>a</code> y <code>b</code>.
+      Esto es justo lo que hace falta para el idioma <code>for i, x in enumerate(lista)</code>,
+      el uso más común de la forma de dos variables.</li>
+</ul>
+<pre><code><span class="cmt"># Dos variables sobre un mapa: clave + valor</span>
+<span class="kw">for</span> nombre, edad <span class="kw">in</span> edades
+    print(<span class="str">"{nombre} tiene {edad}"</span>)
+<span class="kw">end</span>
+
+<span class="cmt"># Dos variables sobre una lista de pares (lo que produce enumerate()):
+# índice + valor, el idioma más habitual para numerar elementos</span>
+frutas = [<span class="str">"manzana"</span>, <span class="str">"pera"</span>, <span class="str">"uva"</span>]
+<span class="kw">for</span> i, fruta <span class="kw">in</span> enumerate(frutas)
+    print(<span class="str">"{i}: {fruta}"</span>)
+<span class="kw">end</span>
+<span class="cmt"># 0: manzana
+# 1: pera
+# 2: uva</span>
+
+<span class="cmt"># También funciona con cualquier lista de pares construida a mano,
+# por ejemplo el resultado de zip():</span>
+nombres = [<span class="str">"ana"</span>, <span class="str">"luis"</span>]
+puntos  = [<span class="num">10</span>, <span class="num">20</span>]
+<span class="kw">for</span> nombre, punt <span class="kw">in</span> zip(nombres, puntos)
+    print(<span class="str">"{nombre}: {punt} pts"</span>)
+<span class="kw">end</span></code></pre>
+<div class="callout tip">
+  <strong>Corregido en v0.9</strong> <span class="badge fix">fix</span>: antes, la forma de
+  dos variables sobre una lista solo asignaba el par <em>completo</em> a la primera variable
+  y dejaba la segunda sin definir. Si ya usabas <code>for i, x in enumerate(...)</code> antes
+  de v0.9, revisa esos bucles: ahora <code>x</code> recibe el valor real, no
+  <code>null</code>/indefinido.
+</div>
+<div class="callout warn">
+  Si un elemento de la lista no es exactamente una lista de 2 elementos, se lanza
+  <code>NimbleError</code> en vez de fallar en silencio.
+</div>
+
+<h3>4. <code>use gc</code> ya funciona <span class="badge fix">módulo inaccesible por use</span></h3>
+<p>
+  El módulo <code>gc</code> (ver <a href="#gc">gestión de memoria / gc</a>) siempre estuvo
+  registrado como módulo nativo igual que <code>math</code>, <code>json</code>, etc., pero
+  la lista interna que la sentencia <code>use</code> usa para reconocer los módulos nativos
+  se había quedado corta y no lo incluía. El resultado: escribir exactamente el ejemplo que
+  la propia documentación mostraba tiraba un error.
+</p>
+<pre><code><span class="cmt"># Antes de v0.9, esto fallaba con:
+# "Could not import module 'gc.nimble' (not found: gc.nimble)"
+# porque 'use' intentaba cargarlo como un archivo del proyecto.</span>
+<span class="kw">use</span> gc
+gc.collect()
+print(gc.stats())</code></pre>
+<div class="callout">
+  Dato curioso mientras se investigaba esto: los módulos nativos (<code>math</code>,
+  <code>json</code>, <code>gc</code>, etc.) en realidad son visibles como variables
+  globales <em>sin necesidad de <code>use</code></em> — <code>use</code> para un módulo
+  nativo solo importa cuando quieres un alias (<code>use gc as g</code>) o una importación
+  selectiva (<code>use gc (collect, stats)</code>). Por eso el impacto real de este bug era
+  limitado (<code>gc.collect()</code> sin la línea <code>use gc</code> ya funcionaba), pero
+  cualquiera de las tres formas de <code>use gc</code> — a secas, con alias o con lista de
+  nombres — seguía estando rota hasta esta versión.
+</div>
+
+<h3>5. Los argumentos con el tipo equivocado ya no crashean el proceso <span class="badge fix">seguridad del sandbox</span></h3>
+<p>
+  Este es el hallazgo más serio de la auditoría. Decenas de funciones nativas — <code>ord</code>,
+  <code>read</code>/<code>write</code>/<code>append</code>, los métodos de string
+  (<code>replace</code>, <code>find</code>, <code>contains</code>, <code>split</code>,
+  <code>join</code>), <code>min</code>/<code>max</code>, <code>map</code>/<code>filter</code>/
+  <code>reduce</code>/<code>zip</code>/<code>enumerate</code>/<code>sum</code>/<code>any</code>/
+  <code>all</code>, y prácticamente todo <code>time</code>, <code>system</code>, <code>regex</code>,
+  <code>hex</code>, <code>env</code>, <code>csv</code> y <code>http</code> — tomaban un argumento
+  del script y accedían a él directamente (<code>a[0].asStr()</code>, <code>a[0].asList()</code>,
+  a veces incluso <code>a[0]</code> sin comprobar que hubiera suficientes argumentos) sin
+  verificar antes que fuera del tipo esperado.
+</p>
+<p>
+  Cuando el tipo no coincidía, eso disparaba una excepción de C++ pura
+  (<code>std::bad_variant_access</code> o <code>std::out_of_range</code>) que <strong>no es
+  un <code>NimbleError</code></strong>. Ningún <code>try/catch</code> del script podía
+  detenerla, y el proceso entero terminaba abortado (<code>SIGABRT</code>). Para un host que
+  usa el <a href="#embed-sandbox">sistema de permisos</a> para ejecutar scripts no confiables, esto
+  anulaba por completo la protección: bastaba un argumento del tipo equivocado — por accidente
+  o a propósito — para tirar el proceso, sin que <code>allowFileWrite: false</code>,
+  <code>allowNetwork: false</code> ni ningún otro permiso pudiera evitarlo.
+</p>
+<pre><code><span class="cmt"># Los tres ejemplos siguientes crasheaban el PROCESO ENTERO antes de v0.9
+# (no solo lanzaban un error de Nimble):</span>
+"abc".replace(<span class="num">5</span>, <span class="str">"x"</span>)    <span class="cmt"># replace() esperaba un string, no un número</span>
+ord(<span class="num">42</span>)                 <span class="cmt"># ord() esperaba un string</span>
+min([])                    <span class="cmt"># min() de una lista vacía</span>
+
+<span class="cmt"># Ahora, los tres simplemente lanzan un NimbleError normal y capturable:</span>
+<span class="kw">try</span>
+    "abc".replace(<span class="num">5</span>, <span class="str">"x"</span>)
+<span class="kw">catch</span> err
+    print(<span class="str">"error: {err}"</span>)   <span class="cmt"># replace(): argument 1 must be a string, got number</span>
+<span class="kw">end</span></code></pre>
+<div class="callout tip">
+  Si embebes Nimble para correr scripts no confiables, esto es la corrección de seguridad
+  más importante de v0.9: antes, ningún conjunto de permisos del <code>SandboxPermissions</code>
+  podía impedir que un script (accidental o malicioso) tumbara el proceso host completo con
+  un solo argumento del tipo equivocado.
+</div>
+
+<h3>break y continue</h3>
+<pre><code><span class="kw">for</span> x <span class="kw">in</span> range(<span class="num">10</span>)
+    <span class="kw">if</span> x == <span class="num">5</span> <span class="kw">break</span> <span class="kw">end</span>
+    <span class="kw">if</span> x % <span class="num">2</span> == <span class="num">0</span> <span class="kw">continue</span> <span class="kw">end</span>
+    print(x)   <span class="cmt"># imprime 1, 3</span>
+<span class="kw">end</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="funciones">Funciones</h2>
+
+<h3>Declaración</h3>
+<pre><code><span class="kw">func</span> saludar(nombre)
+    <span class="kw">return</span> <span class="str">"Hola, {nombre}!"</span>
+<span class="kw">end</span>
+
+print(saludar(<span class="str">"Ana"</span>))</code></pre>
+
+<h3>Parámetros por defecto</h3>
+<pre><code><span class="kw">func</span> potencia(base, exp = <span class="num">2</span>)
+    <span class="kw">return</span> base ** exp
+<span class="kw">end</span>
+
+potencia(<span class="num">5</span>)      <span class="cmt"># 25</span>
+potencia(<span class="num">2</span>, <span class="num">10</span>)  <span class="cmt"># 1024</span></code></pre>
+
+<h3>Argumentos nombrados</h3>
+<pre><code><span class="kw">func</span> crear(nombre, edad, ciudad)
+    <span class="kw">return</span> {nombre, edad, ciudad}
+<span class="kw">end</span>
+
+crear(<span class="str">"Ana"</span>, edad: <span class="num">30</span>, ciudad: <span class="str">"Madrid"</span>)</code></pre>
+
+<h3>Devolver varios valores (lista)</h3>
+<pre><code><span class="kw">func</span> minmax(lista)
+    <span class="kw">return</span> min(lista), max(lista)
+<span class="kw">end</span>
+
+lo, hi = minmax([<span class="num">3</span>, <span class="num">1</span>, <span class="num">7</span>])</code></pre>
+
+<h3>Funciones anónimas (lambda)</h3>
+<pre><code>doble = <span class="kw">func</span>(x) <span class="kw">return</span> x * <span class="num">2</span> <span class="kw">end</span>
+print(doble(<span class="num">5</span>))   <span class="cmt"># 10</span>
+
+<span class="cmt"># Muy útiles con map/filter/reduce</span>
+nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>]
+cuadrados = map(nums, <span class="kw">func</span>(x) <span class="kw">return</span> x * x <span class="kw">end</span>)
+pares = filter(nums, <span class="kw">func</span>(x) <span class="kw">return</span> x % <span class="num">2</span> == <span class="num">0</span> <span class="kw">end</span>)</code></pre>
+
+<h3>Closures</h3>
+<pre><code><span class="kw">func</span> contador()
+    n = <span class="num">0</span>
+    <span class="kw">return</span> <span class="kw">func</span>()
+        n += <span class="num">1</span>
+        <span class="kw">return</span> n
+    <span class="kw">end</span>
+<span class="kw">end</span>
+
+c = contador()
+print(c())   <span class="cmt"># 1</span>
+print(c())   <span class="cmt"># 2</span></code></pre>
+
+<div class="callout warn">
+  <strong>Recursión:</strong> el intérprete impone un límite de profundidad de pila
+  (<code>maxCallDepth</code>, por defecto <strong>500</strong>) para evitar desbordar la pila
+  real de C++. Recursión muy profunda lanzará <code>"Call stack too deep"</code>.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="listas">Listas</h2>
+
+<pre><code>nums = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+
+<span class="cmt"># Listas multilínea</span>
+colores = [
+    <span class="str">"rojo"</span>,
+    <span class="str">"verde"</span>,
+    <span class="str">"azul"</span>
+]</code></pre>
+
+<h3>Indexado y slicing</h3>
+<pre><code>nums[<span class="num">0</span>]        <span class="cmt"># 1</span>
+nums[-<span class="num">1</span>]       <span class="cmt"># 3  (último)</span>
+nums[<span class="num">1</span>:<span class="num">3</span>]      <span class="cmt"># [2, 3]</span>
+nums[:<span class="num">2</span>]       <span class="cmt"># [1, 2]</span>
+nums[<span class="num">1</span>:]       <span class="cmt"># [2, 3]</span>
+
+nums[<span class="num">0</span>] = <span class="num">99</span>   <span class="cmt"># mutación</span></code></pre>
+
+<h3>Miembros de lista</h3>
+<table>
+  <tr><td><code>l.length</code></td><td>Número de elementos.</td></tr>
+  <tr><td><code>l.first</code> / <code>l.last</code></td><td>Primer / último elemento.</td></tr>
+  <tr><td><code>l.push(x)</code></td><td>Añade al final (muta).</td></tr>
+  <tr><td><code>l.pop()</code></td><td>Extrae y devuelve el último.</td></tr>
+  <tr><td><code>l.sort()</code></td><td>Ordena in-place.</td></tr>
+  <tr><td><code>l.reverse()</code></td><td>Invierte in-place.</td></tr>
+  <tr><td><code>l.index_of(valor)</code> <span class="badge new">v0.10</span></td><td>Posición del valor (igualdad estructural, como <code>==</code>) o <code>-1</code> si no está.</td></tr>
+  <tr><td><code>l.join(sep)</code></td><td>Concatena elementos como string.</td></tr>
+</table>
+
+<h3>List comprehensions</h3>
+<pre><code>cuadrados = [x * x <span class="kw">for</span> x <span class="kw">in</span> range(<span class="num">5</span>)]
+<span class="cmt"># [0, 1, 4, 9, 16]</span>
+
+pares = [x <span class="kw">for</span> x <span class="kw">in</span> range(<span class="num">10</span>) <span class="kw">if</span> x % <span class="num">2</span> == <span class="num">0</span>]
+<span class="cmt"># [0, 2, 4, 6, 8]</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="mapas">Mapas y objetos</h2>
+
+<h3>Mapas</h3>
+<pre><code>persona = {
+    nombre: <span class="str">"Ana"</span>,
+    edad: <span class="num">30</span>,
+    ciudad: <span class="str">"Madrid"</span>
+}
+
+print(persona.nombre)         <span class="cmt"># "Ana"</span>
+print(persona[<span class="str">"edad"</span>])       <span class="cmt"># 30</span>
+persona.email = <span class="str">"a@b.com"</span>   <span class="cmt"># añade campo</span>
+
+<span class="cmt"># Claves con nombre simple pueden omitir las comillas</span>
+config = {debug: <span class="kw">true</span>, puerto: <span class="num">8080</span>}
+<span class="cmt"># y también valores por atajo (clave = variable con ese nombre)</span>
+nombre = <span class="str">"X"</span>
+m = {nombre}                  <span class="cmt"># {nombre: "X"}</span>
+
+<span class="cmt"># Spread en mapas</span>
+base = {a: <span class="num">1</span>}
+ext = {...base, b: <span class="num">2</span>}        <span class="cmt"># {a: 1, b: 2}</span></code></pre>
+
+<h3>Objetos (struct dinámico)</h3>
+<pre><code>punto = <span class="kw">object</span>
+    x = <span class="num">0</span>
+    y = <span class="num">0</span>
+    <span class="kw">func</span> mover(dx, dy)
+        self.x += dx
+        self.y += dy
+    <span class="kw">end</span>
+<span class="kw">end</span>
+
+punto.x = <span class="num">5</span>
+punto.mover(<span class="num">1</span>, <span class="num">2</span>)</code></pre>
+
+<p>Los objetos son entornos aislados. Puedes usar <code>self</code> dentro de sus funciones.</p>
+
+<!-- ============================================================= -->
+<h2 id="clases">Clases</h2>
+
+<pre><code><span class="kw">class</span> Animal
+    <span class="kw">func</span> init(nombre)
+        self.nombre = nombre
+    <span class="kw">end</span>
+
+    <span class="kw">func</span> hablar()
+        <span class="kw">return</span> <span class="str">"...?"</span>
+    <span class="kw">end</span>
+
+    <span class="kw">func</span> describir()
+        <span class="kw">return</span> <span class="str">"{self.nombre} dice {self.hablar()}"</span>
+    <span class="kw">end</span>
+<span class="kw">end</span>
+
+<span class="kw">class</span> Perro <span class="kw">extends</span> Animal
+    <span class="kw">func</span> hablar()
+        <span class="kw">return</span> <span class="str">"Guau"</span>
+    <span class="kw">end</span>
+<span class="kw">end</span>
+
+d = Perro(<span class="str">"Rex"</span>)
+print(d.describir())    <span class="cmt"># "Rex dice Guau"</span></code></pre>
+
+<p>El constructor es siempre el método <code>init</code>. Se invoca automáticamente al
+   llamar <code>Clase(args)</code>.</p>
+
+<div class="callout">
+  <strong>Herencia:</strong> simple (un solo padre). Los métodos se buscan recursivamente
+  en la cadena de clases base. La búsqueda de métodos está cacheada para mejor rendimiento
+  <span class="badge v8">v0.7</span>.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="enum">Enums y structs</h2>
+
+<h3>Enum</h3>
+<pre><code><span class="kw">enum</span> Color
+    ROJO
+    VERDE
+    AZUL
+<span class="kw">end</span>
+
+print(Color.ROJO)   <span class="cmt"># 0</span>
+print(Color.AZUL)   <span class="cmt"># 2</span></code></pre>
+<p>Los enums son mapas inmutables: nombre → índice numérico.</p>
+
+<h3>Structs (<code>type</code>)</h3>
+<p>Un struct es una clase con constructor automático y comparación estructural:</p>
+<pre><code>type Punto(x, y)
+
+p = Punto(<span class="num">1</span>, <span class="num">2</span>)
+q = Punto(<span class="num">1</span>, <span class="num">2</span>)
+
+print(p.x)         <span class="cmt"># 1</span>
+print(p == q)      <span class="cmt"># true (comparación por valor)</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="match">Match</h2>
+<p>Coincidencia por valor con comparación estructural:</p>
+<pre><code><span class="kw">match</span> comando
+    <span class="str">"salir"</span>, <span class="str">"exit"</span>:
+        print(<span class="str">"adios"</span>)
+        <span class="kw">break</span>
+    <span class="str">"ayuda"</span>:
+        print(<span class="str">"comandos: salir, ayuda"</span>)
+    <span class="num">0</span>:
+        print(<span class="str">"cero"</span>)
+    <span class="kw">else</span>:
+        print(<span class="str">"desconocido"</span>)
+<span class="kw">end</span></code></pre>
+
+<div class="callout">
+  El <code>match</code> compara el sujeto contra cada etiqueta con <code>==</code> estructural.
+  La rama <code>else</code> es opcional.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="errores">Errores y excepciones</h2>
+
+<h3>throw / try / catch / finally <span class="badge v8">v0.8</span></h3>
+<pre><code><span class="kw">func</span> dividir(a, b)
+    <span class="kw">if</span> b == <span class="num">0</span>
+        <span class="kw">throw</span> <span class="str">"No se puede dividir entre cero"</span>
+    <span class="kw">end</span>
+    <span class="kw">return</span> a / b
+<span class="kw">end</span>
+
+<span class="kw">try</span>
+    print(dividir(<span class="num">10</span>, <span class="num">0</span>))
+<span class="kw">catch</span> err
+    print(<span class="str">"Error: {err}"</span>)
+<span class="kw">finally</span>
+    print(<span class="str">"Esto siempre se ejecuta"</span>)
+<span class="kw">end</span></code></pre>
+
+<p><code>catch</code> captura tanto <code>throw</code> del script como errores internos del
+   intérprete (variables no definidas, tipos, etc.). El valor capturado es el valor tirado
+   o el mensaje del error.</p>
+
+<div class="callout tip">
+  <strong>finally</strong> se ejecuta siempre: tanto si el bloque <code>try</code> termina bien,
+  como si lanza un error, como si se captura, como si hay un <code>return</code>/<code>break</code>/<code>continue</code>
+  en vuelo. Su propio flujo de control tiene precedencia (igual que en Java/Python/JS).
+</div>
+
+<h3>assert y panic</h3>
+<pre><code><span class="kw">assert</span>(x &gt; <span class="num">0</span>)                    <span class="cmt"># aborta si es falso</span>
+<span class="kw">assert</span>(x &gt; <span class="num">0</span>, <span class="str">"x debe ser positivo"</span>)
+
+<span class="kw">panic</span>(<span class="str">"estado imposible"</span>)          <span class="cmt"># aborta siempre</span></code></pre>
+
+<div class="callout danger">
+  <strong>Importante:</strong> <code>assert</code> y <code>panic</code> lanzan una
+  <em>señal no capturable</em> (<code>AbortSignal</code>). Un <code>try/catch</code> del script
+  <strong>no</strong> puede detenerlos. Igual sucede con los límites de ejecución.
+</div>
+
+<h3>exit(code) <span class="badge v8">v0.8</span></h3>
+<pre><code><span class="kw">if</span> error_critico
+    print(<span class="str">"Saliendo..."</span>)
+    exit(<span class="num">1</span>)   <span class="cmt"># termina el proceso con código 1</span>
+<span class="kw">end</span></code></pre>
+<p><code>exit()</code> lanza una <code>ExitSignal</code> que solo se captura en el nivel más
+   externo (main/REPL/test runner), permitiendo que todos los destructores RAII se ejecuten
+   correctamente antes de terminar.</p>
+
+<h3>Traza de pila</h3>
+<p>Los errores no capturados muestran traza:</p>
+<pre><code>Error: [line 5] Undefined variable: 'x'
+Stack trace:
+   at foo (called from line 12)
+   at main (called from line 20)</code></pre>
+
+<!-- ============================================================= -->
+<h2 id="modulos">Módulos</h2>
+
+<h3>Módulos nativos</h3>
+<pre><code><span class="kw">use</span> math
+print(math.sqrt(<span class="num">16</span>))
+
+<span class="kw">use</span> json
+print(json.encode({a: <span class="num">1</span>}))
+
+<span class="cmt"># Con alias</span>
+<span class="kw">use</span> math <span class="kw">as</span> m
+print(m.pi)
+
+<span class="cmt"># Importando nombres concretos</span>
+<span class="kw">use</span> math (sqrt, pi)
+print(sqrt(<span class="num">9</span>))</code></pre>
+
+<h3>Módulos de archivo</h3>
+<pre><code><span class="cmt"># Importa "utilidades.nimble" del mismo directorio</span>
+<span class="kw">use</span> <span class="str">"utilidades.nimble"</span>
+
+<span class="cmt"># Con alias</span>
+<span class="kw">use</span> <span class="str">"utilidades.nimble"</span> <span class="kw">as</span> u
+
+<span class="cmt"># Notación de puntos: paquete.modulo -&gt; paquete/modulo.nimble</span>
+<span class="kw">use</span> paquete.modulo
+
+<span class="cmt"># Importar nombres concretos de un módulo de archivo</span>
+<span class="kw">use</span> <span class="str">"utilidades.nimble"</span> (sumar, restar)</code></pre>
+
+<div class="callout">
+  Los módulos se cargan una sola vez (cache) y se detectan importaciones circulares.
+  El nombre por defecto de un módulo de archivo es el <em>stem</em> del archivo
+  (<code>"utilidades.nimble"</code> → <code>utilidades</code>).
+</div>
+
+<!-- ============================================================= -->
+<h2 id="globals">Funciones globales</h2>
+
+<table>
+  <tr><th>Función</th><th>Descripción</th></tr>
+  <tr><td><code>print(...)</code></td><td>Imprime valores separados por espacio.</td></tr>
+  <tr><td><code>print_err(...)</code> <span class="badge v8">v0.8</span></td><td>Imprime en stderr.</td></tr>
+  <tr><td><code>exit([code])</code> <span class="badge v8">v0.8</span></td><td>Termina el proceso (requiere permiso).</td></tr>
+  <tr><td><code>input([prompt])</code></td><td>Lee una línea de stdin.</td></tr>
+  <tr><td><code>length(x)</code></td><td>Longitud de string/lista/mapa.</td></tr>
+  <tr><td><code>keys(m)</code> <span class="badge v8">v0.8</span></td><td>Lista de claves de un mapa.</td></tr>
+  <tr><td><code>values(m)</code> <span class="badge v8">v0.8</span></td><td>Lista de valores de un mapa.</td></tr>
+  <tr><td><code>type(x)</code></td><td>Nombre del tipo como string.</td></tr>
+  <tr><td><code>number(x)</code>, <code>string(x)</code>, <code>boolean(x)</code></td><td>Conversiones.</td></tr>
+  <tr><td><code>ord(c)</code>, <code>chr(n)</code></td><td>Carácter ↔ código (0–255).</td></tr>
+  <tr><td><code>min(...)</code>, <code>max(...)</code></td><td>Con lista o varargs.</td></tr>
+  <tr><td><code>abs</code>, <code>round</code>, <code>floor</code>, <code>ceil</code></td><td>Numéricas.</td></tr>
+  <tr><td><code>range(stop)</code>, <code>range(start,stop)</code>, <code>range(start,stop,step)</code></td><td>Genera lista.</td></tr>
+  <tr><td><code>map(lista, fn)</code></td><td>Aplica y devuelve nueva lista.</td></tr>
+  <tr><td><code>filter(lista, fn)</code></td><td>Filtra por predicado.</td></tr>
+  <tr><td><code>reduce(lista, fn, [init])</code></td><td>Reduce a un valor.</td></tr>
+  <tr><td><code>sort_by(lista, fn)</code></td><td>Ordena por clave (estable).</td></tr>
+  <tr><td><code>group_by(lista, fn)</code></td><td>Agrupa en mapa.</td></tr>
+  <tr><td><code>zip(a, b)</code></td><td>Lista de pares.</td></tr>
+  <tr><td><code>enumerate(lista)</code></td><td>Lista de <code>[i, x]</code>.</td></tr>
+  <tr><td><code>sum(lista)</code></td><td>Suma de números.</td></tr>
+  <tr><td><code>any(lista, [fn])</code>, <code>all(lista, [fn])</code></td><td>Cuántificadores.</td></tr>
+  <tr><td><code>assert(...)</code>, <code>panic(...)</code></td><td>Abortan (no capturables).</td></tr>
+  <tr><td><code>assert_eq</code>, <code>assert_ne</code>, <code>assert_true</code>, <code>assert_false</code></td><td>Aserciones de test.</td></tr>
+  <tr><td><code>read</code>, <code>write</code>, <code>append</code>, <code>exists</code>, <code>delete</code>, <code>listdir</code>, <code>mkdir</code>, <code>rmdir</code></td><td>Archivos y directorios.</td></tr>
+</table>
+
+<h3>Agregaciones — ejemplos</h3>
+<pre><code>personas = [
+    {nombre: <span class="str">"Ana"</span>, edad: <span class="num">30</span>},
+    {nombre: <span class="str">"Luis"</span>, edad: <span class="num">25</span>},
+    {nombre: <span class="str">"Eva"</span>, edad: <span class="num">30</span>}
+]
+
+ordenadas = sort_by(personas, <span class="kw">func</span>(p) <span class="kw">return</span> p.edad <span class="kw">end</span>)
+porEdad = group_by(personas, <span class="kw">func</span>(p) <span class="kw">return</span> string(p.edad) <span class="kw">end</span>)
+totalEdades = sum(map(personas, <span class="kw">func</span>(p) <span class="kw">return</span> p.edad <span class="kw">end</span>))
+
+<span class="kw">for</span> i, p <span class="kw">in</span> enumerate(personas)
+    print(<span class="str">"{i}: {p.nombre}"</span>)
+<span class="kw">end</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="math">math</h2>
+<pre><code><span class="kw">use</span> math
+
+math.sqrt(<span class="num">16</span>)     <span class="cmt"># 4</span>
+math.sin(<span class="num">0</span>)        <span class="cmt"># 0</span>
+math.cos(<span class="num">0</span>)        <span class="cmt"># 1</span>
+math.tan(<span class="num">0</span>)        <span class="cmt"># 0</span>
+math.abs(-<span class="num">3</span>)      <span class="cmt"># 3</span>
+math.floor(<span class="num">3.7</span>)    <span class="cmt"># 3</span>
+math.ceil(<span class="num">3.1</span>)     <span class="cmt"># 4</span>
+math.pow(<span class="num">2</span>, <span class="num">10</span>)    <span class="cmt"># 1024</span>
+math.round(<span class="num">3.14159</span>, <span class="num">2</span>)  <span class="cmt"># 3.14  -- redondeo a N decimales</span>
+math.pi            <span class="cmt"># 3.14159...</span></code></pre>
+<div class="callout">
+  <code>math.round(x, decimales)</code> <span class="badge new">v0.10</span> es distinto
+  del <code>round(x)</code> global: el global sigue aceptando un solo argumento
+  (redondea a entero) sin cambios; <code>math.round</code> agrega el segundo argumento
+  opcional de decimales (por defecto <code>0</code>, mismo resultado que el global en
+  ese caso).
+</div>
+
+<h2 id="random">random</h2>
+<pre><code><span class="kw">use</span> random
+
+random.int(<span class="num">1</span>, <span class="num">6</span>)              <span class="cmt"># entero entre 1 y 6 (inclusive)</span>
+random.float()                 <span class="cmt"># [0.0, 1.0)</span>
+random.float(<span class="num">-1</span>, <span class="num">1</span>)           <span class="cmt"># rango arbitrario</span>
+random.choice([<span class="str">"a"</span>, <span class="str">"b"</span>])    <span class="cmt"># un elemento al azar</span></code></pre>
+
+<h2 id="time">time</h2>
+<pre><code><span class="kw">use</span> time
+
+t = time.now()                           <span class="cmt"># segundos epoch (float)</span>
+time.sleep(<span class="num">0.5</span>)                       <span class="cmt"># duerme 500 ms</span>
+time.today()                             <span class="cmt"># "2025-01-15"</span>
+time.format(t, <span class="str">"%Y-%m-%d %H:%M"</span>)        <span class="cmt"># formatea</span>
+time.parse(<span class="str">"2025-01-15"</span>, <span class="str">"%Y-%m-%d"</span>)  <span class="cmt"># -&gt; epoch</span>
+time.add_days(t, <span class="num">7</span>)
+time.add_seconds(t, <span class="num">3600</span>)
+time.diff(t2, t1)                        <span class="cmt"># t2 - t1 en segundos</span></code></pre>
+
+<h2 id="system">system</h2>
+<pre><code><span class="kw">use</span> system
+
+system.args                              <span class="cmt"># lista de argumentos CLI</span>
+
+<span class="cmt"># Ejecutar y mostrar salida en terminal</span>
+rc = system.run(<span class="str">"ls -la"</span>)
+
+<span class="cmt"># Capturar stdout</span>
+salida = system.run(<span class="str">"ls"</span>, capture: <span class="kw">true</span>)
+
+<span class="cmt"># Ejecutar y capturar stdout, stderr y status por separado</span>
+r = system.exec(<span class="str">"comando"</span>)
+print(r.status)     <span class="cmt"># código de salida</span>
+print(r.stdout)     <span class="cmt"># salida estándar</span>
+print(r.stderr)     <span class="cmt"># salida de error</span></code></pre>
+
+<h2 id="json">json</h2>
+<pre><code><span class="kw">use</span> json
+
+texto = json.encode({nombre: <span class="str">"Ana"</span>, edad: <span class="num">30</span>})
+<span class="cmt"># '{"nombre":"Ana","edad":30}'</span>
+
+obj = json.decode(<span class="str">'{"a": [1, 2, 3], "b": true}'</span>)
+print(obj.a)    <span class="cmt"># [1, 2, 3]</span>
+print(obj.b)    <span class="cmt"># true</span>
+
+<span class="cmt"># json.decode entiende objetos, listas, strings, números,
+# true/false/null anidados a cualquier profundidad:</span>
+config = json.decode(<span class="str">'{"servidor": {"puerto": 8080, "activo": true}, "tags": ["a","b"]}'</span>)
+print(config.servidor.puerto)   <span class="cmt"># 8080</span>
+print(config.tags[0])           <span class="cmt"># "a"</span></code></pre>
+
+<h3>Entrada malformada</h3>
+<p>
+  Trata siempre la entrada de <code>json.decode()</code> como no confiable (viene de un
+  archivo, una respuesta HTTP, etc.) y envuélvela en <code>try/catch</code>:
+</p>
+<pre><code><span class="kw">try</span>
+    obj = json.decode(texto_no_confiable)
+<span class="kw">catch</span> err
+    print(<span class="str">"JSON inválido: {err}"</span>)
+    obj = {}
+<span class="kw">end</span></code></pre>
+<div class="callout tip">
+  <strong>Corregido en v0.9</strong> <span class="badge fix">fix</span>: antes,
+  <code>json.decode()</code> con entrada malformada podía terminar el proceso entero
+  (<code>std::terminate</code>) sin que ningún <code>try/catch</code> del script pudiera
+  evitarlo, porque el parser de números no validaba el texto antes de convertirlo. Ahora
+  valida números, <code>true</code>, <code>false</code> y <code>null</code> antes de
+  consumirlos, así que cualquier entrada inválida — incluida la cadena vacía, un objeto
+  vacío mal formado, o basura arbitraria — produce como mucho un <code>NimbleError</code>
+  capturable, nunca un crash.
+</div>
+
+<h2 id="path">path</h2>
+<pre><code><span class="kw">use</span> path
+
+path.join(<span class="str">"a"</span>, <span class="str">"b"</span>, <span class="str">"c.txt"</span>)   <span class="cmt"># "a/b/c.txt"</span>
+path.basename(<span class="str">"/home/x/f.txt"</span>)   <span class="cmt"># "f.txt"</span>
+path.dirname(<span class="str">"/home/x/f.txt"</span>)    <span class="cmt"># "/home/x"</span></code></pre>
+
+<h2 id="regex">regex</h2>
+<pre><code><span class="kw">use</span> regex
+
+regex.matches(<span class="str">"abc123"</span>, <span class="str">r"\d+"</span>)              <span class="cmt"># true</span>
+regex.match(<span class="str">"abc123"</span>, <span class="str">r"\d+"</span>)                <span class="cmt"># "123"</span>
+regex.find_all(<span class="str">"a1b2c3"</span>, <span class="str">r"\d"</span>)             <span class="cmt"># ["1","2","3"]</span>
+regex.groups(<span class="str">"2025-01-15"</span>, <span class="str">r"(\d+)-(\d+)-(\d+)"</span>)
+<span class="cmt"># ["2025", "01", "15"]</span>
+regex.replace(<span class="str">"a-b-c"</span>, <span class="str">"-"</span>, <span class="str">"_"</span>)              <span class="cmt"># "a_b_c"</span>
+regex.replace_first(<span class="str">"a-a-a"</span>, <span class="str">"a"</span>, <span class="str">"X"</span>)         <span class="cmt"># "X-a-a"</span>
+regex.split(<span class="str">"a,b;c"</span>, <span class="str">r"[,;]"</span>)                <span class="cmt"># ["a","b","c"]</span></code></pre>
+<p>Usa strings raw <code>r"..."</code> para evitar dobles escapes en patrones.</p>
+
+<h2 id="hex">hex</h2>
+<pre><code><span class="kw">use</span> hex
+
+hex.encode(<span class="str">"abc"</span>)    <span class="cmt"># "616263"</span>
+hex.decode(<span class="str">"616263"</span>)  <span class="cmt"># "abc"</span></code></pre>
+
+<h2 id="env">env</h2>
+<pre><code><span class="kw">use</span> env
+
+env.get(<span class="str">"HOME"</span>)           <span class="cmt"># valor o null</span>
+env.has(<span class="str">"PATH"</span>)           <span class="cmt"># boolean</span>
+env.set(<span class="str">"MI_VAR"</span>, <span class="str">"x"</span>)   <span class="cmt"># escribe variable de entorno</span>
+env.all()                  <span class="cmt"># mapa con todas</span></code></pre>
+
+<h2 id="csv">csv</h2>
+<pre><code><span class="kw">use</span> csv
+
+<span class="cmt"># Parsear CSV con cabecera (por defecto)</span>
+filas = csv.parse(<span class="str">"nombre,edad\nAna,30\nLuis,25"</span>)
+<span class="cmt"># [ {nombre: "Ana", edad: "30"}, {nombre: "Luis", edad: "25"} ]</span>
+
+<span class="cmt"># Sin cabecera -&gt; listas de listas</span>
+filas2 = csv.parse(texto, header: <span class="kw">false</span>)
+
+<span class="cmt"># Generar CSV desde lista de mapas o lista de listas</span>
+texto = csv.write(filas)
+texto2 = csv.write(filas, header: <span class="kw">false</span>)</code></pre>
+
+<h2 id="http">http</h2>
+<div class="callout warn">
+  Requiere compilar con <code>-DHAVE_CURL -lcurl</code>. Si no, las funciones lanzan
+  error explicando cómo compilar.
+</div>
+<pre><code><span class="kw">use</span> http
+
+r = http.get(<span class="str">"https://api.ejemplo.com/datos"</span>)
+print(r.status)    <span class="cmt"># 200</span>
+print(r.body)      <span class="cmt"># texto de respuesta</span>
+
+<span class="cmt"># Con cabeceras</span>
+r = http.get(<span class="str">"https://api.ejemplo.com"</span>,
+    headers: {<span class="str">"Authorization"</span>: <span class="str">"Bearer xyz"</span>})
+
+<span class="cmt"># POST</span>
+r = http.post(<span class="str">"https://api.ejemplo.com/x"</span>,
+    body: json.encode({a: <span class="num">1</span>}),
+    headers: {<span class="str">"Content-Type"</span>: <span class="str">"application/json"</span>})</code></pre>
+
+<h2 id="net">net <span class="badge new">v0.10</span></h2>
+<p>
+  Sockets TCP y UDP <strong>crudos y bloqueantes</strong>: sin loop de eventos, sin
+  async, cada llamada de <code>send</code>/<code>recv</code>/<code>accept</code> se
+  queda esperando hasta terminar (o hasta que salte un <code>set_timeout</code>). Pensado
+  para mini-servidores de prueba, protocolos simples de juego, o hablar con algo por
+  socket a mano. No depende de libcurl ni de ninguna librería externa — en Linux/macOS
+  usa sockets BSD estándar, en Windows usa Winsock2 (hay que enlazar con
+  <code>ws2_32</code> a mano si compilás con MinGW/g++; con MSVC alcanza con el
+  <code>#pragma comment(lib, ...)</code> que ya trae el intérprete).
+</p>
+<div class="callout warn">
+  Gateado por el mismo permiso que <code>http.get</code>/<code>http.post</code>:
+  <code>interp.permissions.allowNetwork</code>. Con <code>allowNetwork = false</code>,
+  cualquier función de <code>net</code> lanza un <code>NimbleError</code> en vez de abrir
+  un socket.
+</div>
+<div class="callout">
+  Solo IPv4 por ahora (<code>AF_INET</code>). No hay soporte de IPv6 ni de TLS/SSL —
+  para HTTPS seguí usando <code>http.get</code>/<code>http.post</code> (que sí usan
+  libcurl por debajo).
+</div>
+
+<h3>Funciones del módulo</h3>
+<table>
+  <tr><th>Función</th><th>Descripción</th></tr>
+  <tr><td><code>net.tcp_listen([host], [puerto])</code></td>
+      <td>Crea un socket TCP en escucha y devuelve un <strong>server</strong>. <code>host</code> por defecto <code>"0.0.0.0"</code> (todas las interfaces); <code>puerto</code> por defecto <code>0</code> (el sistema operativo elige uno libre — mirá <code>server.port</code> para saber cuál).</td></tr>
+  <tr><td><code>net.tcp_connect(host, puerto)</code></td>
+      <td>Conecta por TCP y devuelve una <strong>conn</strong> ya conectada. <code>host</code> puede ser un nombre de dominio (se resuelve con <code>getaddrinfo</code>) o una IP.</td></tr>
+  <tr><td><code>net.udp_socket([host], [puerto])</code></td>
+      <td>Crea y bindea un socket UDP; devuelve un objeto <strong>udp</strong>. Mismos valores por defecto que <code>tcp_listen</code>.</td></tr>
+  <tr><td><code>net.resolve(host)</code></td>
+      <td>Resuelve un nombre a una IPv4 (string), o lanza error si no se pudo resolver.</td></tr>
+</table>
+
+<h3>server — lo que devuelve <code>net.tcp_listen()</code></h3>
+<table>
+  <tr><th>Miembro</th><th>Descripción</th></tr>
+  <tr><td><code>server.port</code></td><td>Puerto real en el que quedó escuchando (útil cuando pediste el puerto <code>0</code>).</td></tr>
+  <tr><td><code>server.accept()</code></td><td>Bloquea hasta que llega una conexión entrante; devuelve una <strong>conn</strong>.</td></tr>
+  <tr><td><code>server.set_timeout(segundos)</code></td><td>Si nadie se conecta dentro del tiempo dado, <code>accept()</code> lanza <code>NimbleError</code> en vez de bloquear para siempre.</td></tr>
+  <tr><td><code>server.close()</code></td><td>Cierra el socket de escucha.</td></tr>
+</table>
+
+<h3>conn — lo que devuelven <code>net.tcp_connect()</code> y <code>server.accept()</code></h3>
+<table>
+  <tr><th>Miembro</th><th>Descripción</th></tr>
+  <tr><td><code>conn.remote_host</code>, <code>conn.remote_port</code></td><td>IP y puerto del otro extremo.</td></tr>
+  <tr><td><code>conn.send(datos)</code></td><td>Envía el string completo (reintenta internamente hasta mandarlo todo); devuelve la cantidad de bytes enviados.</td></tr>
+  <tr><td><code>conn.recv([max])</code></td><td>Lee hasta <code>max</code> bytes (por defecto 4096) y los devuelve como string. Un string vacío (<code>""</code>) significa que el otro lado cerró la conexión, no que no llegó nada.</td></tr>
+  <tr><td><code>conn.set_timeout(segundos)</code></td><td>Tiempo máximo para <code>send</code>/<code>recv</code> antes de lanzar error.</td></tr>
+  <tr><td><code>conn.close()</code></td><td>Cierra la conexión.</td></tr>
+</table>
+
+<h3>udp — lo que devuelve <code>net.udp_socket()</code></h3>
+<table>
+  <tr><th>Miembro</th><th>Descripción</th></tr>
+  <tr><td><code>udp.port</code></td><td>Puerto real bindeado.</td></tr>
+  <tr><td><code>udp.send_to(host, puerto, datos)</code></td><td>Manda un datagrama a un destino puntual. Devuelve bytes enviados.</td></tr>
+  <tr><td><code>udp.recv_from([max])</code></td><td>Bloquea hasta recibir un datagrama; devuelve un mapa <code>{data, host, port}</code> con el contenido y de dónde vino.</td></tr>
+  <tr><td><code>udp.set_timeout(segundos)</code></td><td>Igual que en TCP.</td></tr>
+  <tr><td><code>udp.close()</code></td><td>Cierra el socket.</td></tr>
+</table>
+
+<div class="callout tip">
+  <strong>No hace falta <code>.close()</code> explícito:</strong> cada handle (conn,
+  server o udp) mantiene internamente su file descriptor con RAII. En cuanto el script
+  deja de tener cualquier referencia a ese handle, el socket se cierra solo. Llamar a
+  <code>.close()</code> a mano sigue siendo buena práctica quirúrgica (cerrarlo apenas
+  termines de usarlo, en vez de esperar a que el recolector de basura lo note).
+</div>
+
+<h3>Ejemplo: servidor y cliente TCP tipo eco</h3>
+<pre><code><span class="cmt"># servidor.nimble</span>
+<span class="kw">use</span> net
+
+srv = net.tcp_listen(<span class="str">"127.0.0.1"</span>, <span class="num">9000</span>)
+print(<span class="str">"escuchando en el puerto {srv.port}"</span>)
+
+<span class="kw">while</span> <span class="kw">true</span>
+    conn = srv.accept()
+    print(<span class="str">"conexión de {conn.remote_host}:{conn.remote_port}"</span>)
+    data = conn.recv()
+    conn.send(<span class="str">"eco: {data}"</span>)
+    conn.close()
+<span class="kw">end</span></code></pre>
+<pre><code><span class="cmt"># cliente.nimble</span>
+<span class="kw">use</span> net
+
+c = net.tcp_connect(<span class="str">"127.0.0.1"</span>, <span class="num">9000</span>)
+c.send(<span class="str">"hola\r\n"</span>)
+print(c.recv())    <span class="cmt"># "eco: hola\r\n"</span>
+c.close()</code></pre>
+
+<h3>Ejemplo: hablar HTTP a mano (línea por línea, con <code>\r\n</code>)</h3>
+<p>
+  Un caso típico donde importa el escape <code>\r</code> nuevo de v0.11: armar a mano el
+  request de un protocolo de texto como HTTP, que exige terminadores de línea CRLF
+  exactos.
+</p>
+<pre><code><span class="kw">use</span> net
+
+c = net.tcp_connect(<span class="str">"example.com"</span>, <span class="num">80</span>)
+c.set_timeout(<span class="num">5</span>)
+c.send(<span class="str">"GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"</span>)
+
+respuesta = <span class="str">""</span>
+<span class="kw">while</span> <span class="kw">true</span>
+    chunk = c.recv()
+    <span class="kw">if</span> chunk == <span class="str">""</span> <span class="kw">break</span> <span class="kw">end</span>   <span class="cmt"># "" == el otro lado cerró</span>
+    respuesta += chunk
+<span class="kw">end</span>
+print(respuesta)
+c.close()</code></pre>
+<div class="callout tip">
+  Para HTTPS o para no lidiar con el protocolo a mano, seguí usando
+  <a href="#http">http.get / http.post</a>, que hablan HTTP(S) completo por vos vía
+  libcurl. <code>net</code> es la capa de más bajo nivel, para cuando necesitás el
+  socket crudo (protocolos propios, UDP, servidores).
+</div>
+
+<h3>Ejemplo: UDP</h3>
+<pre><code><span class="kw">use</span> net
+
+a = net.udp_socket(<span class="str">"127.0.0.1"</span>, <span class="num">9100</span>)
+b = net.udp_socket(<span class="str">"127.0.0.1"</span>)   <span class="cmt"># puerto 0 -&gt; el SO elige uno</span>
+
+b.send_to(<span class="str">"127.0.0.1"</span>, <span class="num">9100</span>, <span class="str">"ping"</span>)
+msg = a.recv_from()
+print(<span class="str">"{msg.data} de {msg.host}:{msg.port}"</span>)   <span class="cmt"># "ping de 127.0.0.1:<puerto de b>"</span></code></pre>
+
+<h3>Resolución de nombres</h3>
+<pre><code><span class="kw">use</span> net
+
+net.resolve(<span class="str">"example.com"</span>)   <span class="cmt"># p.ej. "93.184.216.34"</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="archivos">Archivos (I/O)</h2>
+<p>Funciones globales, sin módulo:</p>
+<pre><code><span class="kw">write</span>(<span class="str">"salida.txt"</span>, <span class="str">"Hola\n"</span>)         <span class="cmt"># crea/sobrescribe</span>
+<span class="kw">append</span>(<span class="str">"salida.txt"</span>, <span class="str">"Mundo\n"</span>)        <span class="cmt"># añade al final</span>
+contenido = <span class="kw">read</span>(<span class="str">"salida.txt"</span>)
+<span class="kw">exists</span>(<span class="str">"salida.txt"</span>)                   <span class="cmt"># true/false</span>
+<span class="kw">listdir</span>(<span class="str">"."</span>)                          <span class="cmt"># lista de nombres</span>
+<span class="kw">mkdir</span>(<span class="str">"nueva_carpeta"</span>)
+<span class="kw">rmdir</span>(<span class="str">"nueva_carpeta"</span>)
+<span class="kw">delete</span>(<span class="str">"salida.txt"</span>)                   <span class="cmt"># devuelve true si pudo</span></code></pre>
+
+<!-- ============================================================= -->
+<h2 id="gc">gc — Recolector de ciclos <span class="badge v8">v0.7</span></h2>
+<p>Nimble usa <code>shared_ptr</code> para la gestión de memoria, lo que libera automáticamente
+   todo lo que no forme parte de un ciclo de referencias. Para los ciclos (closures que se
+   referencian a sí mismas, objetos que se apuntan mutuamente, etc.), hay un recolector de
+   ciclos por prueba de eliminación (similar al de CPython).</p>
+
+<pre><code><span class="kw">use</span> gc
+
+gc.collect()   <span class="cmt"># fuerza una recolección; devuelve cuántos nodos liberó</span>
+gc.stats()     <span class="cmt"># devuelve un mapa con estadísticas</span></code></pre>
+
+<p><code>gc.stats()</code> devuelve:</p>
+<table>
+  <tr><th>Campo</th><th>Descripción</th></tr>
+  <tr><td><code>tracked</code></td><td>Número de nodos actualmente rastreados.</td></tr>
+  <tr><td><code>last_collected</code></td><td>Nodos liberados en la última recolección.</td></tr>
+  <tr><td><code>total_collected</code></td><td>Total de nodos liberados desde el inicio.</td></tr>
+</table>
+
+<div class="callout tip">
+  El recolector se ejecuta automáticamente cada ~5000 asignaciones de tipos rastreados
+  (Env, FunctionObj, ClassObj). Para la mayoría de scripts no necesitas llamarlo manualmente.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="tests">Framework de tests</h2>
+<p>Puedes definir bloques <code>test "nombre"</code> y ejecutarlos con
+  <code>nimble test archivo.nimble</code>:</p>
+
+<pre><code><span class="kw">func</span> sumar(a, b)
+    <span class="kw">return</span> a + b
+<span class="kw">end</span>
+
+test <span class="str">"suma básica"</span>
+    assert_eq(sumar(<span class="num">2</span>, <span class="num">3</span>), <span class="num">5</span>)
+<span class="kw">end</span>
+
+test <span class="str">"suma con negativos"</span>
+    assert_eq(sumar(-<span class="num">1</span>, <span class="num">1</span>), <span class="num">0</span>)
+    assert_ne(sumar(<span class="num">1</span>, <span class="num">1</span>), <span class="num">3</span>)
+<span class="kw">end</span>
+
+test <span class="str">"lista vacía"</span>
+    assert_true(length([]) == <span class="num">0</span>)
+    assert_false(length([<span class="num">1</span>]) == <span class="num">0</span>)
+<span class="kw">end</span></code></pre>
+
+<pre><code>$ nimble test ejemplos.nimble
+  ✓ suma básica
+  ✓ suma con negativos
+  ✓ lista vacía
+
+3 passed, 0 failed</code></pre>
+
+<div class="callout tip">
+  Los <code>test</code> se registran al ejecutar el programa principal. Si un test lanza
+  <code>return</code>, cuenta como pasado. Si <code>assert</code>/<code>panic</code> abortan,
+  se reporta como fallo.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="embed-intro" style="margin-top:80px">Embebido en C++</h2>
+<p>
+  El intérprete puede usarse como biblioteca dentro de una aplicación C++. Esta sección
+  documenta la API pública de embebido.
+</p>
+
+<h3>Requisitos</h3>
+<ul>
+  <li>Compilador C++17 o superior.</li>
+  <li>Definir <code>NIMBLE_NO_MAIN</code> antes de incluir <code>nimble.cpp</code>.</li>
+  <li>Si tu build system prefiere no incluir un <code>.cpp</code>, compila <code>nimble.cpp</code>
+      con <code>-DNIMBLE_NO_MAIN</code> como unidad de compilación separada y declara la clase
+      en un header propio. Para uso rápido, incluir el <code>.cpp</code> es lo más simple.</li>
+</ul>
+
+<!-- ============================================================= -->
+<h2 id="embed-basico">Uso básico</h2>
+
+<pre><code><span class="cmt">// host.cpp</span>
+<span class="kw">#define</span> NIMBLE_NO_MAIN
+<span class="kw">#include</span> <span class="str">"nimble.cpp"</span>
+
+<span class="kw">#include</span> &lt;iostream&gt;
+
+<span class="kw">int</span> main() {
+    <span class="cmt">// Argumentos visibles para el script como system.args</span>
+    Interpreter interp({<span class="str">"mi_app"</span>, <span class="str">"--modo"</span>, <span class="str">"debug"</span>});
+
+    <span class="cmt">// Código fuente Nimble</span>
+    std::string src = R<span class="str">"(
+print("Hola desde el script")
+for i in range(3)
+    print("iteración {i}")
+end
+)"</span>;
+
+    <span class="cmt">// Lex + parse</span>
+    Lexer lex(src);
+    <span class="kw">auto</span> toks = lex.tokenize();
+    Parser parser(toks);
+    <span class="kw">auto</span> program = parser.parseProgram();
+
+    <span class="cmt">// Ejecutar</span>
+    interp.run(program);
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+
+<h3>Compilar el host</h3>
+<pre><code>g++ -std=c++17 -O2 host.cpp -o mi_app
+<span class="cmt"># Con curl</span>
+g++ -std=c++17 -O2 -DHAVE_CURL host.cpp -o mi_app -lcurl</code></pre>
+
+<!-- ============================================================= -->
+<h2 id="embed-nativas">Registrar funciones nativas</h2>
+
+<p>Expón funciones C++ al script con <code>registerNative</code>:</p>
+
+<pre><code><span class="kw">#define</span> NIMBLE_NO_MAIN
+<span class="kw">#include</span> <span class="str">"nimble.cpp"</span>
+
+<span class="kw">int</span> main() {
+    Interpreter interp;
+
+    <span class="cmt">// Firma: Value(std::vector&lt;Value&gt;&amp; args,
+    //              std::vector&lt;std::pair&lt;std::string,Value&gt;&gt;&amp; named,
+    //              Interpreter&amp; interp)</span>
+    interp.registerNative(<span class="str">"saludar"</span>,
+        [](std::vector&lt;Value&gt;&amp; args,
+           std::vector&lt;std::pair&lt;std::string,Value&gt;&gt;&amp;,
+           Interpreter&amp;) -&gt; Value {
+            std::string nombre = args.empty() ? <span class="str">"mundo"</span> : args[<span class="num">0</span>].asStr();
+            <span class="kw">return</span> Value(<span class="str">"Hola, "</span> + nombre + <span class="str">"!"</span>);
+        });
+
+    interp.registerNative(<span class="str">"duplicar"</span>,
+        [](std::vector&lt;Value&gt;&amp; args, <span class="kw">auto</span>&amp;, Interpreter&amp;) -&gt; Value {
+            <span class="kw">return</span> Value(args[<span class="num">0</span>].asNum() * <span class="num">2</span>);
+        });
+
+    <span class="cmt">// ...cargar y ejecutar script que use saludar(...) y duplicar(...)</span>
+}</code></pre>
+
+<div class="callout">
+  <strong>Nota:</strong> al llamar una función nativa, los argumentos pasados por el script
+  ya están evaluados. Los parámetros nombrados llegan en el segundo vector. No es necesario
+  validar cantidad, pero es buena práctica hacerlo y lanzar <code>NimbleError</code> con un
+  mensaje claro si falta algo.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="embed-call">Llamar funciones del script desde C++</h2>
+
+<p>Usa <code>callGlobal</code> para invocar funciones globales definidas por el script
+  (por ejemplo hooks como <code>_ready</code>, <code>_process</code>, <code>on_event</code>):</p>
+
+<pre><code>Interpreter interp;
+<span class="cmt">// ... cargar y ejecutar el script ...</span>
+
+<span class="cmt">// Llamar sin argumentos</span>
+interp.callGlobal(<span class="str">"_ready"</span>);
+
+<span class="cmt">// Pasar argumentos</span>
+std::vector&lt;Value&gt; args;
+args.push_back(Value(0.016));   <span class="cmt">// delta time</span>
+args.push_back(Value(<span class="str">"frame"</span>));
+interp.callGlobal(<span class="str">"_process"</span>, args);
+
+<span class="cmt">// Recoger el valor de retorno</span>
+Value v = interp.callGlobal(<span class="str">"obtener_puntuacion"</span>);
+<span class="kw">if</span> (v.isNum()) std::cout &lt;&lt; <span class="str">"Puntuación: "</span> &lt;&lt; v.asNum() &lt;&lt; <span class="str">"\n"</span>;</code></pre>
+
+<p><code>callGlobal</code> lanza <code>NimbleError</code> si la función no existe o no es invocable.</p>
+
+<!-- ============================================================= -->
+<h2 id="embed-sandbox">Sandbox y permisos</h2>
+
+<p>
+  El intérprete expone <code>interp.permissions</code>, un struct
+  <code>SandboxPermissions</code>. Por defecto <strong>todo está permitido</strong>, para que
+  el CLI se comporte igual que siempre. En modo embebido puedes restringir antes de
+  ejecutar cualquier script.
+</p>
+
+<table>
+  <tr><th>Campo</th><th>Controla</th></tr>
+  <tr><td><code>allowFileRead</code></td><td><code>read</code>, <code>exists</code></td></tr>
+  <tr><td><code>allowFileWrite</code></td><td><code>write</code>, <code>append</code></td></tr>
+  <tr><td><code>allowFileSystemOps</code></td><td><code>delete</code>, <code>listdir</code>, <code>mkdir</code>, <code>rmdir</code></td></tr>
+  <tr><td><code>allowFileModules</code></td><td><code>use "archivo.nimble"</code> y módulos de archivo</td></tr>
+  <tr><td><code>allowSystemExec</code></td><td><code>system.run</code>, <code>system.exec</code></td></tr>
+  <tr><td><code>allowNetwork</code></td><td><code>http.get</code>, <code>http.post</code>, y todo <code>net.*</code> <span class="badge new">v0.10</span> (<code>tcp_listen</code>, <code>tcp_connect</code>, <code>udp_socket</code>, <code>resolve</code>)</td></tr>
+  <tr><td><code>allowEnvRead</code></td><td><code>env.get</code>, <code>env.has</code>, <code>env.all</code></td></tr>
+  <tr><td><code>allowEnvWrite</code></td><td><code>env.set</code></td></tr>
+  <tr><td><code>allowExit</code> <span class="badge v8">v0.8</span></td><td><code>exit()</code></td></tr>
+  <tr><td><code>confineToRoot</code> + <code>sandboxRoot</code></td><td>Confina todas las rutas a una carpeta base</td></tr>
+</table>
+
+<h3>Ejemplo: bloquear todo lo peligroso</h3>
+<pre><code>Interpreter interp;
+
+interp.permissions.allowFileRead      = <span class="kw">true</span>;
+interp.permissions.allowFileWrite     = <span class="kw">false</span>;
+interp.permissions.allowFileSystemOps = <span class="kw">false</span>;
+interp.permissions.allowFileModules   = <span class="kw">true</span>;
+interp.permissions.allowSystemExec    = <span class="kw">false</span>;
+interp.permissions.allowNetwork       = <span class="kw">false</span>;
+interp.permissions.allowEnvRead       = <span class="kw">true</span>;
+interp.permissions.allowEnvWrite      = <span class="kw">false</span>;
+interp.permissions.allowExit          = <span class="kw">false</span>;
+
+<span class="cmt">// Confina toda I/O a ./scripts/assets/</span>
+interp.permissions.confineToRoot = <span class="kw">true</span>;
+interp.permissions.sandboxRoot   = <span class="str">"./scripts/assets"</span>;
+
+<span class="cmt">// ... ejecutar script ...</span></code></pre>
+
+<div class="callout danger">
+  <strong>Aviso honesto sobre el sandbox:</strong> el confinamiento de rutas es una
+  defensa <em>léxica</em> (normalización). <strong>No</strong> protege contra symlinks que
+  apunten fuera del sandbox. Si necesitas aislamiento real, considera ejecutar el
+  intérprete en un proceso separado con <code>seccomp</code>, contenedor, o similar.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="embed-limites">Límites de ejecución</h2>
+
+<p>Para protegerte contra bucles infinitos y recursión descontrolada:</p>
+
+<h3>Límite de pasos</h3>
+<pre><code>interp.setStepLimit(<span class="num">1'000'000</span>);   <span class="cmt">// máximo de "pasos" (iteraciones y similares)</span></code></pre>
+
+<h3>Límite de tiempo</h3>
+<pre><code>interp.setTimeLimit(<span class="num">2.5</span>);   <span class="cmt">// segundos</span></code></pre>
+
+<h3>Profundidad de recursión</h3>
+<pre><code>interp.maxCallDepth = <span class="num">200</span>;   <span class="cmt">// por defecto 500 (importante si usas hilos con stack chico)</span></code></pre>
+
+<p>
+  Cuando se excede un límite, se lanza <code>Interpreter::ExecutionLimitExceeded</code>.
+  Esta excepción <strong>no</strong> es capturable por <code>try/catch</code> del script:
+  si lo fuera, un script malicioso podría escapar del límite simplemente atrapándola.
+</p>
+
+<pre><code>Interpreter interp;
+interp.setStepLimit(<span class="num">100000</span>);
+interp.setTimeLimit(<span class="num">1.0</span>);
+
+<span class="kw">try</span> {
+    interp.run(program);
+} <span class="kw">catch</span> (Interpreter::ExecutionLimitExceeded&amp; e) {
+    std::cerr &lt;&lt; <span class="str">"Script excedió el límite: "</span> &lt;&lt; e.message &lt;&lt; <span class="str">"\n"</span>;
+}</code></pre>
+
+<h3>Cuándo llamar a <code>checkLimits</code></h3>
+<p>
+  Internamente se llama en bucles <code>while</code>/<code>for</code> y otros puntos calientes.
+  Si tu host necesita control más fino (por frame), puedes llamar <code>interp.checkLimits()</code>
+  manualmente entre hooks.
+</p>
+
+<!-- ============================================================= -->
+<h2 id="embed-modulos">Módulos embebidos en el ejecutable</h2>
+
+<p>
+  Si distribuyes un solo binario, puedes empotrar los módulos <code>.nimble</code> dentro
+  del ejecutable en vez de leerlos del disco:
+</p>
+
+<pre><code>std::unordered_map&lt;std::string, std::string&gt; modulos;
+
+<span class="cmt">// La clave es la ruta resuelta por el intérprete. Por ejemplo, si el
+// script hace  use "utilidades.nimble"  y scriptDir es ".",
+// la clave será algo como "./utilidades.nimble" (normalizado).</span>
+modulos[<span class="str">"./utilidades.nimble"</span>] = R<span class="str">"(
+func sumar(a, b)
+    return a + b
+end
+)"</span>;
+
+Interpreter interp;
+interp.embeddedSources = &amp;modulos;
+
+<span class="cmt">// Ahora use "utilidades.nimble" tomará el módulo del mapa.</span></code></pre>
+
+<div class="callout">
+  Cuando <code>embeddedSources</code> está activo, cualquier <code>use "archivo.nimble"</code>
+  se busca primero en el mapa. Si no está, se lanza
+  <code>"Module not bundled into the executable: ..."</code>.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="embed-valores">Trabajar con <code>Value</code></h2>
+
+<p>La clase <code>Value</code> es el tipo de todos los valores del intérprete. API relevante:</p>
+
+<h3>Construcción</h3>
+<pre><code>Value d(3.14);                    <span class="cmt">// number (double)</span>
+Value n(42);                      <span class="cmt">// number (int)   -- ver nota v0.9 abajo</span>
+Value b(<span class="kw">true</span>);                   <span class="cmt">// boolean</span>
+Value s(<span class="str">"hola"</span>);              <span class="cmt">// string (const char*) -- ver nota v0.9 abajo</span>
+Value s2(std::string(<span class="str">"hola"</span>));  <span class="cmt">// string (std::string), sigue funcionando igual</span>
+Value nul;                        <span class="cmt">// null</span>
+
+<span class="cmt">// Lista</span>
+<span class="kw">auto</span> l = std::make_shared&lt;ListObj&gt;();
+l-&gt;items.push_back(Value(<span class="num">1</span>));
+l-&gt;items.push_back(Value(<span class="num">2</span>));
+Value lista(l);
+
+<span class="cmt">// Mapa</span>
+<span class="kw">auto</span> m = std::make_shared&lt;MapObj&gt;();
+m-&gt;set(<span class="str">"clave"</span>, Value(42));
+Value mapa(m);</code></pre>
+
+<div class="callout danger">
+  <strong>Cambio importante en v0.9</strong> <span class="badge fix">fix</span>:
+  <code>Value(int)</code> y <code>Value(const char*)</code> se añadieron en v0.9. Antes:
+  <ul style="margin:8px 0 0">
+    <li><code>Value(42)</code> era un <strong>error de compilación</strong> (ambiguo entre
+        <code>Value(double)</code> y <code>Value(bool)</code>).</li>
+    <li><code>Value("texto")</code> compilaba <strong>sin ningún error ni warning</strong>,
+        pero el resultado era <code>Value(true)</code> — un booleano — porque la conversión
+        estándar de puntero a <code>bool</code> gana la resolución de sobrecarga frente a la
+        conversión definida por el usuario de <code>const char*</code> a
+        <code>std::string</code>.</li>
+  </ul>
+  <p style="margin:8px 0 0">
+    Si tienes código de embebido escrito antes de v0.9 que evitaba este problema envolviendo
+    literales manualmente (<code>Value(std::string("texto"))</code> o
+    <code>Value((double)42)</code>), ese código sigue funcionando exactamente igual. El
+    riesgo está solo en código <em>nuevo</em> que hoy escriba <code>Value("texto")</code> o
+    <code>Value(42)</code> esperando el comportamiento antiguo (compilar distinto o fallar);
+    ahora ambos hacen lo obvio.
+  </p>
+</div>
+
+<h3>Consulta</h3>
+<pre><code><span class="kw">if</span> (v.isNum())    { <span class="kw">double</span> d = v.asNum(); ... }
+<span class="kw">if</span> (v.isStr())    { <span class="kw">const</span> std::string&amp; s = v.asStr(); ... }
+<span class="kw">if</span> (v.isBool())   { <span class="kw">bool</span> b = v.asBool(); ... }
+<span class="kw">if</span> (v.isList())   { <span class="kw">auto</span> l = v.asList(); ... }
+<span class="kw">if</span> (v.isMap())    { <span class="kw">auto</span> m = v.asMap(); ... }
+<span class="kw">if</span> (v.isFunc())   { ... }
+<span class="kw">if</span> (v.isObj())    { <span class="kw">auto</span> e = v.asObj(); ... }
+<span class="kw">if</span> (v.isClass())  { <span class="kw">auto</span> c = v.asClass(); ... }
+<span class="kw">if</span> (v.isNull())   { ... }</code></pre>
+
+<h3>Convertir a string</h3>
+<pre><code>std::string txt = toDisplayString(v);</code></pre>
+
+<h3>Devolver listas al script</h3>
+<pre><code>interp.registerNative(<span class="str">"get_enemigos"</span>,
+    [](std::vector&lt;Value&gt;&amp;, <span class="kw">auto</span>&amp;, Interpreter&amp;) -&gt; Value {
+        <span class="kw">auto</span> l = std::make_shared&lt;ListObj&gt;();
+        l-&gt;items.push_back(Value(<span class="str">"goblin"</span>));
+        l-&gt;items.push_back(Value(<span class="str">"orco"</span>));
+        <span class="kw">return</span> Value(l);
+    });</code></pre>
+
+<h3>Devolver mapas al script</h3>
+<pre><code>interp.registerNative(<span class="str">"get_config"</span>,
+    [](std::vector&lt;Value&gt;&amp;, <span class="kw">auto</span>&amp;, Interpreter&amp;) -&gt; Value {
+        <span class="kw">auto</span> m = std::make_shared&lt;MapObj&gt;();
+        m-&gt;set(<span class="str">"ancho"</span>,  Value(<span class="num">800</span>));
+        m-&gt;set(<span class="str">"alto"</span>,   Value(<span class="num">600</span>));
+        m-&gt;set(<span class="str">"titulo"</span>, Value(std::string(<span class="str">"Mi juego"</span>)));
+        <span class="kw">return</span> Value(m);
+    });</code></pre>
+
+<h3>Lanzar errores hacia el script</h3>
+<pre><code><span class="kw">throw</span> NimbleError(<span class="str">"algo salió mal"</span>);</code></pre>
+<p>El script puede capturarlo con <code>try/catch</code>.</p>
+
+<!-- ============================================================= -->
+<h2 id="embed-gc">Recolector de ciclos en el host <span class="badge v8">v0.7</span></h2>
+
+<p>Si tu host crea muchos objetos Nimble de larga vida (closures, clases), el recolector
+   de ciclos funciona automáticamente. Pero también puedes exponerlo al script:</p>
+
+<pre><code><span class="cmt">// En el script:</span>
+<span class="kw">use</span> gc
+gc.collect()   <span class="cmt"># forzar recolección</span>
+stats = gc.stats()
+print(stats.tracked)</code></pre>
+
+<div class="callout warn">
+  <strong>Limitación conocida:</strong> el recolector no puede inspeccionar las capturas
+  de un <code>std::function</code> nativo. Si una función nativa captura un <code>Value</code>
+  que a su vez crea un ciclo, ese ciclo no será detectado. En la práctica, esto solo afecta
+  a wrappers nativos creados dinámicamente y almacenados en objetos de larga vida.
+</div>
+
+<!-- ============================================================= -->
+<h2>Ejemplo completo: scripting de juego</h2>
+
+<pre><code><span class="cmt">// game.cpp</span>
+<span class="kw">#define</span> NIMBLE_NO_MAIN
+<span class="kw">#include</span> <span class="str">"nimble.cpp"</span>
+<span class="kw">#include</span> &lt;iostream&gt;
+
+<span class="kw">int</span> main() {
+    Interpreter interp({<span class="str">"game"</span>});
+
+    <span class="cmt">// --- Sandbox: script de usuario con permisos mínimos ---</span>
+    interp.permissions.allowFileRead      = <span class="kw">false</span>;
+    interp.permissions.allowFileWrite     = <span class="kw">false</span>;
+    interp.permissions.allowFileSystemOps = <span class="kw">false</span>;
+    interp.permissions.allowFileModules   = <span class="kw">false</span>;
+    interp.permissions.allowSystemExec    = <span class="kw">false</span>;
+    interp.permissions.allowNetwork       = <span class="kw">false</span>;
+    interp.permissions.allowEnvRead       = <span class="kw">false</span>;
+    interp.permissions.allowEnvWrite      = <span class="kw">false</span>;
+    interp.permissions.allowExit          = <span class="kw">false</span>;
+
+    <span class="cmt">// --- Límites ---</span>
+    interp.setStepLimit(<span class="num">500000</span>);
+    interp.setTimeLimit(<span class="num">1.0</span>);   <span class="cmt">// 1 s por llamada a _process</span>
+    interp.maxCallDepth = <span class="num">300</span>;
+
+    <span class="cmt">// --- API del motor expuesta al script ---</span>
+    interp.registerNative(<span class="str">"spawn_enemigo"</span>,
+        [](std::vector&lt;Value&gt;&amp; a, <span class="kw">auto</span>&amp;, Interpreter&amp;) -&gt; Value {
+            std::string tipo = a.empty() ? <span class="str">"goblin"</span> : a[<span class="num">0</span>].asStr();
+            std::cout &lt;&lt; <span class="str">"[motor] spawn "</span> &lt;&lt; tipo &lt;&lt; <span class="str">"\n"</span>;
+            <span class="kw">return</span> Value((<span class="kw">double</span>)std::rand());
+        });
+
+    interp.registerNative(<span class="str">"get_delta"</span>,
+        [](std::vector&lt;Value&gt;&amp;, <span class="kw">auto</span>&amp;, Interpreter&amp;) -&gt; Value {
+            <span class="kw">return</span> Value(0.016);
+        });
+
+    <span class="cmt">// --- Cargar script del usuario ---</span>
+    std::string src = R<span class="str">"(
+func _ready()
+    print("Script listo")
+    self.tiempo = 0
+end
+
+func _process(dt)
+    self.tiempo = (self.tiempo ?? 0) + dt
+    if self.tiempo > 1.0
+        spawn_enemigo("orco")
+        self.tiempo = 0
+    end
+end
+)"</span>;
+
+    Lexer lex(src);
+    <span class="kw">auto</span> toks = lex.tokenize();
+    Parser parser(toks);
+    <span class="kw">auto</span> program = parser.parseProgram();
+
+    <span class="kw">try</span> {
+        interp.run(program);
+        interp.callGlobal(<span class="str">"_ready"</span>);
+
+        <span class="cmt">// Simular 3 segundos de frames</span>
+        <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; 180; ++i) {
+            std::vector&lt;Value&gt; args{ interp.callGlobal(<span class="str">"get_delta"</span>) };
+            interp.callGlobal(<span class="str">"_process"</span>, args);
+        }
+    } <span class="kw">catch</span> (Interpreter::ExecutionLimitExceeded&amp; e) {
+        std::cerr &lt;&lt; <span class="str">"Script excedió límites: "</span> &lt;&lt; e.message &lt;&lt; <span class="str">"\n"</span>;
+    } <span class="kw">catch</span> (NimbleError&amp; e) {
+        std::cerr &lt;&lt; <span class="str">"Error en el script: "</span> &lt;&lt; e.what() &lt;&lt; <span class="str">"\n"</span>;
+    }
+
+    <span class="kw">return</span> <span class="num">0</span>;
+}</code></pre>
+
+<!-- ============================================================= -->
+<footer>
+  <p>
+    <strong>Nimble v0.9</strong> — Guía generada a partir de <code>nimble.cpp</code>.
+    Consulta los comentarios del archivo fuente para detalles internos.
+  </p>
+  <p style="margin-top:8px">
+    <strong>Novedades v0.9 (corrección de bugs, ver arriba):</strong>
+    <code>json.decode()</code> ya no puede crashear el proceso con entrada malformada
+    (ni con números inválidos ni con claves de objeto que no sean strings);
+    las interpolaciones de string inválidas ahora lanzan <code>NimbleError</code>
+    capturable en vez de sustituir un texto de relleno silencioso;
+    <code>Value(int)</code> y <code>Value(const char*)</code> se añadieron a la API de
+    embebido (antes <code>Value(42)</code> no compilaba y <code>Value("texto")</code>
+    producía silenciosamente un booleano); <code>for a, b in lista</code> ahora
+    destructura cada par correctamente (antes solo funcionaba sobre mapas);
+    <code>use gc</code> ya funciona (faltaba en la whitelist de módulos nativos de
+    <code>use</code>); y, la corrección más importante para el sandbox, decenas de
+    funciones nativas (<code>ord</code>, <code>read</code>/<code>write</code>, los
+    métodos de string, <code>min</code>/<code>max</code>, <code>map</code>/<code>filter</code>/
+    <code>reduce</code>, y prácticamente todos los módulos <code>time</code>/<code>system</code>/
+    <code>regex</code>/<code>hex</code>/<code>env</code>/<code>csv</code>/<code>http</code>)
+    ya no crashean el proceso completo cuando reciben un argumento del tipo equivocado o
+    faltante — ahora lanzan <code>NimbleError</code> capturable, cerrando un hueco serio en
+    el modelo de sandbox.
+  </p>
+  <p style="margin-top:8px">
+    <strong>Novedades v0.8:</strong> <code>try/catch/finally</code>,
+    <code>keys()</code>/<code>values()</code>, <code>exit()</code> con
+    <code>ExitSignal</code>, <code>print_err()</code>, permiso
+    <code>allowExit</code>.
+  </p>
+  <p style="margin-top:4px">
+    <strong>Novedades v0.7:</strong> recolector de ciclos (<code>gc.collect()</code>,
+    <code>gc.stats()</code>), caché de búsqueda de métodos.
+  </p>
+  <p style="margin-top:4px">
+    <strong>Novedades v0.6:</strong> flujo de control sin excepciones,
+    mensajes de error en inglés.
+  </p>
+  <p style="margin-top:4px">
+    <strong>Novedades v0.5:</strong> <code>optionalNewline()</code> (bloques en una línea),
+    listas multilínea.
+  </p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>
