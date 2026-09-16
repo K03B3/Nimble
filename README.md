@@ -185,5 +185,4 @@ PRs are welcome. If you add a new function or module:
 
 ## License
 
-_Add the license you're publishing the project under here (MIT, Apache-2.0, etc.) and
-a `LICENSE` file at the repo root._
+_MIT, Apache-2.0._
