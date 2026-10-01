@@ -1,4 +1,189 @@
 // Nimble interpreter - C++17
+// v0.20 - Lectura de archivos linea a linea, nativa:
+//   read_lines(ruta)  -> lista de lineas (LF/CRLF, sin "" final).
+//   open_lines(ruta)  -> lector perezoso de memoria constante:
+//                        `for linea in open_lines(ruta)` o r.read_line()
+//                        (null al final) y r.close().
+//   Misma semantica que conn.recv_line(). Como el `for` copiaba el iterable
+//   entero, se agrego un protocolo de iteracion perezosa: un mapa con una
+//   funcion "__next__" se recorre hasta que devuelva null. Respeta los
+//   mismos permisos y confinamiento de rutas que read().
+//   Ademas: el banner del REPL seguia diciendo v0.16 (no se habia
+//   actualizado en v0.17-v0.19); ahora muestra v0.20.
+// v0.19 - Nuevo modulo nativo `hash`: hash.md5(datos) devuelve el digest MD5
+//   como string hex de 32 caracteres, y hash.md5_raw(datos) los 16 bytes
+//   crudos. Implementacion propia del RFC 1321 (sin dependencias). Opera
+//   sobre bytes, asi que funciona con texto, con \0 y con datos binarios.
+//   MD5 sirve para checksums e identificadores; NO es seguro para
+//   contrasenas ni firmas.
+// v0.18 - Parametros por defecto multiples: func f(a = 1, b = 2) fallaba al
+//   llamarla con "Cannot destructure: value is not a list" (y con 3 o mas
+//   por defecto, con un error de sintaxis). Causa: los valores por defecto
+//   se parseaban con parseExpr(), que admite la asignacion multiple sin
+//   corchetes (a, b = 1, 2). Al leer el default "1" de "a = 1, b = 2" veia
+//   la coma, probaba "b" y al encontrar "=" lo tomaba como el destructuring
+//   [1, b] = 2. Con un solo parametro por defecto no hay coma, por eso
+//   nunca se notaba. Fix: los defaults usan parseTernary() (la coma
+//   separa parametros) y se agrego parseElemExpr() (parseAssign sin tuplas)
+//   para los demas sitios donde la coma es un separador y tenia el mismo
+//   defecto latente: argumentos de llamada, elementos de lista y valores de
+//   mapa. A nivel de sentencia "a, b = b, a" sigue funcionando igual.
+// v0.17 - conn.send_nb() ahora es no bloqueante de verdad. Bug encontrado
+//   al escribir un ejemplo de broadcast con cola de salida por conexion:
+//   send_nb() hacia poll(POLLOUT, 0ms) y despues un ::send() normal sobre
+//   un socket bloqueante. POLLOUT solo garantiza que hay algo de espacio en
+//   el buffer de salida, no que quepa todo `data`: si el script le pasaba
+//   una cola grande (varios MB) a un peer que no leia, el ::send() esperaba
+//   hasta poder colocarla entera, y el loop completo -- todos los demas
+//   clientes incluidos -- quedaba congelado, justo lo que send_nb() debia
+//   evitar. Fix: POSIX usa MSG_DONTWAIT en ese send (acepta lo que quepa o
+//   devuelve EAGAIN, que ya se traducia a 0); Windows, que no tiene esa
+//   flag, pone el socket en modo no bloqueante solo durante la llamada
+//   (ioctlsocket/FIONBIO) y lo restaura. Sin cambios para scripts
+//   existentes: el contrato documentado (devuelve bytes aceptados, 0 si no
+//   hay lugar, nunca bloquea) es el mismo, ahora se cumple.
+// v0.16 - Non-blocking writes for net sockets. General gap, not specific to
+//   any one script: net.poll() only ever asked the OS about POLLIN, and
+//   conn.send() loops until every byte is sent, with a timeout that resets
+//   per internal ::send() call rather than covering the whole call -- so a
+//   single slow peer being served from the same event loop as others (a
+//   broadcast/relay/proxy pattern, not just radio_server.nimble) could stall
+//   everyone else far longer than set_timeout() suggests, and there was no
+//   way for a script to ask "can I write to this socket without blocking?"
+//   at all. Three additive changes, all opt-in -- no existing script's
+//   behavior changes:
+//   - net.poll(list, timeout): a list item can now be a dict
+//     {"sock": conn, "read": bool, "write": bool} instead of a bare socket,
+//     to also watch for write-readiness (POLLOUT). Bare sockets behave
+//     exactly as before (read-only interest). Matched dicts come back with
+//     "readable"/"writable" set so the script knows which fired.
+//   - conn.send_nb(data): one non-blocking-safe attempt (poll for POLLOUT
+//     with a 0ms timeout, then a single ::send()) -- returns bytes actually
+//     accepted this call, 0 if the socket has no room right now, never
+//     blocks, never throws on would-block. Lets a script keep a per-
+//     connection output queue and never let one slow connection hold up the
+//     rest of the loop. conn.send() itself is unchanged.
+//   - conn.set_nodelay(bool): TCP_NODELAY, useful for any chunked or
+//     low-latency protocol, not just one kind of script.
+// v0.15 - Windows pass over net + filesystem (found while running
+//   radio_server.nimble on Windows; every item below is a spot where the
+//   POSIX code path was fine and the Windows one was silently different):
+//   - net.tcp_listen(): SO_REUSEADDR on Windows lets TWO processes listen
+//     on the same port with no error (the opposite of Linux, where it only
+//     skips TIME_WAIT). Windows now uses SO_EXCLUSIVEADDRUSE, so a second
+//     server on a busy port fails with a bind error, like on Linux.
+//   - Socket errors on Windows were just "codigo 10048". They now carry the
+//     system's own text (FormatMessageW, in UTF-8) plus the code.
+//   - net.poll() with an empty list: POSIX poll() just waits; WSAPoll()
+//     rejects it. Windows now waits too, so both behave the same.
+//   - UTF-8 end to end on Windows. Every Nimble string is UTF-8, but the
+//     "narrow" Windows APIs (fs::path(std::string), ifstream(std::string),
+//     path.string(), argv, _mkdir...) use the ANSI code page. A file called
+//     "Cancion con acento.mp3" came out of listdir() as CP1252 bytes (not
+//     valid UTF-8, so JSON/HTML built from it showed U+FFFD), and one with
+//     characters outside the ANSI page could not be opened at all. All
+//     filesystem access now goes through nimblePath()/nimblePathStr()
+//     (wide APIs on Windows, plain pass-through on POSIX); argv is read with
+//     GetCommandLineW; the console is switched to UTF-8 while the process
+//     runs (and restored on exit). Paths in scripts that are NOT valid UTF-8
+//     (e.g. a script saved as ANSI) fall back to the ANSI code page instead
+//     of failing, so existing scripts keep working.
+//   - A UTF-8 BOM at the start of a script/module (Notepad's "UTF-8 with BOM",
+//     PowerShell 5's -Encoding utf8) used to fail with "Unexpected character".
+//     The Lexer now skips it (source code only; read() of user data is untouched).
+//   Not covered: env.get()/env.has()/env.set() and system.run()/exec() still
+//   use the narrow ANSI APIs on Windows.
+// v0.14 - SIGPIPE fix, found by actually running radio_server.nimble with
+//   listeners connecting and disconnecting for real. Writing to a socket
+//   whose peer already closed the connection (conn.send() to a listener
+//   that dropped) raises SIGPIPE on POSIX; left at its default
+//   disposition, that terminates the whole process immediately, before
+//   it ever reaches the try/catch around conn.send() -- a signal isn't a
+//   C++ exception, no amount of catching in Nimble script code helps.
+//   Confirmed the causal link with a paired test: the exact same
+//   "listener disconnects mid-stream, a second listener should keep
+//   receiving" scenario kills the process with SIGPIPE left at its
+//   default (SIG_DFL) and leaves it running fine with it ignored
+//   (SIG_IGN) -- same binary, same script, only that one line differs.
+//   Fix is one signal(SIGPIPE, SIG_IGN) call in main() (POSIX only --
+//   Windows has no SIGPIPE, ::send() there already fails with
+//   WSAECONNRESET, which conn.send() already turns into a catchable
+//   NimbleError). With the signal ignored, send()/write() to a closed
+//   socket now just return -1 with errno=EPIPE like any other socket
+//   error, which conn.send()'s existing "n <= 0 -> throw" already
+//   handles -- no change needed there at all.
+// v0.13 - net.poll() plus the two file-I/O primitives it and real media
+//   streaming needed. Written against a second real program: a live
+//   internet-radio server (one shared mp3 stream broadcast to every
+//   connected listener at once) and a static file server that streams
+//   video with byte-range support.
+//   - file_size(path): std::filesystem::file_size(), non-throwing (see
+//     is_dir/is_file in v0.12 for why "ask the filesystem, don't use an
+//     exception as a status code" matters here too). Lets a caller know
+//     how large a file is without reading it.
+//   - read_range(path, offset, length): reads at most `length` bytes
+//     starting at `offset` without loading the rest of the file. Backs
+//     HTTP Range/206 responses (seeking in a <video>) and radio_server's
+//     chunked broadcast reads. Returns fewer bytes than asked for at EOF
+//     rather than erroring -- ifstream::gcount() after read() already
+//     tells the caller exactly how much came back.
+//   - net.poll(sockets, timeout_seconds): multiplexes N server/conn/udp
+//     sockets (they all now carry an internal "fd" field for this) with
+//     a single ::poll() (WSAPoll() on Windows -- same struct shape, same
+//     fields, so it's one implementation behind an #ifdef, not two).
+//     Before this, every script in this file that opened a socket was
+//     stuck serving one client at a time: server.accept() and
+//     conn.recv()/recv_line() all block, so a second listener connecting
+//     while the first was being served just sat in the OS backlog
+//     waiting its turn. net.poll() is what let radio_server.nimble
+//     accept new listeners and keep pushing audio to already-connected
+//     ones in the same loop, with no threads anywhere. Confirmed with an
+//     actual two-listener test: a listener that connects mid-broadcast
+//     starts receiving audio from wherever the stream currently is (not
+//     from byte 0), and two simultaneous listeners receive byte-for-byte
+//     identical data -- a real synchronized broadcast, not two
+//     independent per-listener streams that happen to read the same
+//     files.
+// v0.12 - net/io robustness pass plus one lexer bugfix found while writing
+//   a real HTTP server against this interpreter (a small manga-reader app
+//   that serves images over raw sockets):
+//   - net: conn.recv_line() reads up to the next '\n' (accepts bare LF or
+//     CRLF), buffering whatever it over-reads on NetSocket so a later
+//     recv_line()/recv() picks up exactly where the last one left off.
+//     conn.recv() now drains that buffer first before doing a raw ::recv,
+//     so interleaving recv() and recv_line() on the same connection can no
+//     longer drop or reorder bytes. recv_line() also caps how large a
+//     single line can grow (default 64KB, overridable) before raising --
+//     without that limit a peer that never sends '\n' would grow the
+//     buffer unboundedly, the same class of unguarded-input problem the
+//     v0.9 json.decode fix closed.
+//   - is_dir(path) / is_file(path): before this, telling a directory from
+
+//     a file meant calling listdir() and using the NimbleError it throws
+//     on a non-directory as an ad-hoc "is this a folder?" check -- using
+//     exceptions for expected, everyday control flow, which is exactly
+//     what v0.6 moved break/continue/return away from. Both are
+//     std::filesystem-backed, non-throwing (they return false for a path
+//     that doesn't exist rather than raising), and gated behind the same
+//     permissions.allowFileRead / confinePath sandbox check as exists().
+//   - Lexer: an unterminated single-quote string ("...) no longer silently
+//     swallows the rest of the source file looking for the next '"'. It
+//     used to keep consuming *across newlines* -- including real code --
+//     until it happened to hit some later, unrelated '"' character
+//     (closing whatever string literal came next), or hit end-of-file
+//     with no error at all. Either way the failure (if any) surfaced many
+//     lines away from the actual missing quote, as a confusing, unrelated
+//     parse error. Now a raw newline or EOF inside a single-quote string
+//     raises "Unterminated string literal" pointing at the line the
+//     string opened on. Triple-quoted strings ("""...""") are unaffected
+//     -- they're still the intended way to write a literal that spans
+//     multiple lines.
+//   - ErrHelp::suggest()'s "did you mean 'x'?" text was in Spanish
+//     ("¿quisiste decir?"), the only non-English fragment inside an
+//     otherwise all-English error message ("Undefined variable: 'x' --
+//     ¿quisiste decir 'y'?"). Translated for consistency with the rest of
+//     the error strings (the v0.6 pass that translated error/warning text
+//     predates this helper, so it was missed then).
 // v0.11  func multi-line, new error message
 //   - String literals now support \r as an escape sequence. Before this,
 //     "\r" fell through to the switch's default case, which kept the
@@ -111,6 +296,8 @@
 #include <filesystem>
 #include <optional>
 #include <ctime>
+#include <csignal>
+#include <charconv>
 #include <sys/stat.h>
 #include <sys/types.h>
 #ifdef _WIN32
@@ -121,8 +308,10 @@
 // MSVC alcanza con este #pragma).
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <shellapi.h>   // CommandLineToArgvW (argv en UTF-8)
 #ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "shell32.lib")
 #endif
 #else
 #include <sys/wait.h>
@@ -136,11 +325,71 @@
 #include <netdb.h>
 #include <fcntl.h>
 #include <cerrno>
+#include <poll.h>
 #endif
 
 #ifdef HAVE_CURL
 #include <curl/curl.h>
 #endif
+
+// ============================================================
+// Rutas y texto: UTF-8 <-> sistema
+// ============================================================
+// Todo string de Nimble es UTF-8. En Linux/macOS el sistema de archivos
+// tambien, asi que no hay nada que convertir. En Windows NO: las APIs
+// "narrow" (ifstream(std::string), fs::path(std::string), path.string(),
+// argv, _mkdir...) usan la pagina de codigos ANSI (CP1252 en un Windows en
+// espanol), no UTF-8. nimblePath()/nimblePathStr()/nimblePathGeneric() son
+// la unica puerta hacia y desde std::filesystem; en POSIX son un simple
+// paso directo.
+#ifdef _WIN32
+static std::wstring nimbleUtf8ToWide(const std::string& s) {
+    if (s.empty()) return std::wstring();
+    // MB_ERR_INVALID_CHARS: sin el, Windows "arregla" el UTF-8 invalido con
+    // U+FFFD en silencio. Si no es UTF-8 valido (ej. un script guardado como
+    // ANSI) se interpreta con la pagina ANSI, como hacia antes de v0.15.
+    UINT cp = CP_UTF8;
+    int n = MultiByteToWideChar(cp, MB_ERR_INVALID_CHARS, s.data(), (int)s.size(), nullptr, 0);
+    if (n <= 0) {
+        cp = CP_ACP;
+        n = MultiByteToWideChar(cp, 0, s.data(), (int)s.size(), nullptr, 0);
+        if (n <= 0) return std::wstring();
+    }
+    std::wstring w((size_t)n, L'\0');
+    MultiByteToWideChar(cp, cp == CP_UTF8 ? MB_ERR_INVALID_CHARS : 0, s.data(), (int)s.size(), &w[0], n);
+    return w;
+}
+static std::string nimbleWideToUtf8(const std::wstring& w) {
+    if (w.empty()) return std::string();
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    if (n <= 0) return std::string();
+    std::string s((size_t)n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), &s[0], n, nullptr, nullptr);
+    return s;
+}
+#endif
+static std::filesystem::path nimblePath(const std::string& utf8) {
+#ifdef _WIN32
+    return std::filesystem::path(nimbleUtf8ToWide(utf8));
+#else
+    return std::filesystem::path(utf8);
+#endif
+}
+static std::string nimblePathStr(const std::filesystem::path& p) {
+#ifdef _WIN32
+    return nimbleWideToUtf8(p.wstring());
+#else
+    return p.string();
+#endif
+}
+static std::string nimblePathGeneric(const std::filesystem::path& p) {
+#ifdef _WIN32
+    return nimbleWideToUtf8(p.generic_wstring());
+#else
+    return p.generic_string();
+#endif
+}
+
 
 // ============================================================
 // Warnings
@@ -154,14 +403,14 @@ namespace Warnings {
 }
 
 // ============================================================
-// Error message helpers: source-line context + "¿quisiste decir...?"
+// Error message helpers: source-line context + "did you mean...?"
 // ============================================================
 // Two small, self-contained additions used only when *printing* an error
 // (never during normal evaluation, so none of this is perf-sensitive):
 //   - sourceLines/setSource/lineText let printError() show the actual
 //     offending line next to "[line N]" instead of leaving the user to go
 //     count lines by hand.
-//   - distance()/suggest() power "¿quisiste decir 'x'?" on typo-shaped
+//   - distance()/suggest() power "did you mean 'x'?" on typo-shaped
 //     errors (undefined variable, unknown list/string member).
 namespace ErrHelp {
     inline std::vector<std::string> sourceLines;
@@ -218,7 +467,7 @@ namespace ErrHelp {
 
     inline std::string suggest(const std::string& target, const std::vector<std::string>& candidates) {
         std::string c = closest(target, candidates);
-        return c.empty() ? "" : (" -- ¿quisiste decir '" + c + "'?");
+        return c.empty() ? "" : (" -- did you mean '" + c + "'?");
     }
 }
 
@@ -285,7 +534,14 @@ struct ExitSignal { int code; };
 
 class Lexer {
 public:
-    Lexer(const std::string& src) : s(src) {}
+    Lexer(const std::string& src) : s(src) {
+        // Un BOM UTF-8 (EF BB BF) al inicio del codigo fuente no es parte del
+        // programa: lo agregan el Bloc de notas ("UTF-8 con BOM") y PowerShell 5
+        // (-Encoding utf8). Solo se ignora aqui, en el CODIGO; read() de datos
+        // del usuario no se toca.
+        if (s.size() >= 3 && (unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB && (unsigned char)s[2] == 0xBF)
+            s.erase(0, 3);
+    }
 
     std::vector<Token> tokenize() {
         std::vector<Token> out;
@@ -350,6 +606,11 @@ private:
                 if (s[pos] == '\n') line++;
                 val += s[pos++];
             }
+            if (pos >= s.size()) {
+                // EOF sin encontrar el cierre `"""`: antes se devolvia el resto
+                // del archivo como STRING sin ningun error.
+                throw NimbleError("Unterminated triple-quoted string (missing closing '\"\"\"')", startLine);
+            }
             pos += 3;
             if (!val.empty() && val.front() == '\n') val.erase(val.begin());
             return {Tok::STRING, val, 0, startLine};
@@ -359,6 +620,15 @@ private:
             std::string val;
             while (pos < s.size() && s[pos] != '"') {
                 char ch = s[pos];
+                if (ch == '\n') {
+                    // Un string de comilla simple no puede cruzar líneas: sin
+                    // este corte, el loop seguía comiendo el resto del
+                    // archivo (código incluido) hasta tropezar con la
+                    // próxima '"' que apareciera, generando errores
+                    // confusos y lejos de la causa real. Para strings
+                    // multilinea a proposito, usar comillas triples """...""".
+                    throw NimbleError("Unterminated string literal (missing closing '\"' before end of line)", startLine);
+                }
                 if (ch == '\\' && pos + 1 < s.size()) {
                     char nx = s[pos + 1];
                     switch (nx) {
@@ -373,12 +643,16 @@ private:
                     }
                     pos += 2;
                 } else {
-                    if (ch == '\n') line++;
                     val += ch;
                     pos++;
                 }
             }
-            if (pos < s.size()) pos++;
+            if (pos >= s.size()) {
+                // Llegamos al final del archivo sin encontrar la comilla de
+                // cierre (ej. la ultima linea del archivo es `texto = "algo`).
+                throw NimbleError("Unterminated string literal (missing closing '\"')", startLine);
+            }
+            pos++; // consumir la comilla de cierre
             return {Tok::STRING, val, 0, startLine};
         }
         if (isdigit((unsigned char)c)) {
@@ -404,6 +678,18 @@ private:
                 pos++;
                 while (pos < s.size() && isdigit((unsigned char)s[pos])) pos++;
             }
+            // Exponent suffix (1e10, 1.5e3, 2.5E-3, ...). Only consumed when
+            // it's actually well-formed (an optional sign followed by at
+            // least one digit) -- otherwise a bare trailing 'e' is left
+            // alone rather than swallowed into a malformed number token.
+            if (pos < s.size() && (s[pos] == 'e' || s[pos] == 'E')) {
+                size_t expPos = pos + 1;
+                if (expPos < s.size() && (s[expPos] == '+' || s[expPos] == '-')) expPos++;
+                if (expPos < s.size() && isdigit((unsigned char)s[expPos])) {
+                    pos = expPos;
+                    while (pos < s.size() && isdigit((unsigned char)s[pos])) pos++;
+                }
+            }
             std::string numText = s.substr(start, pos - start);
             Token t{Tok::NUMBER, numText, std::stod(numText), startLine};
             return t;
@@ -412,10 +698,18 @@ private:
             pos += 2;
             std::string val;
             while (pos < s.size() && s[pos] != '"') {
-                if (s[pos] == '\n') line++;
+                if (s[pos] == '\n') {
+                    // Igual que las strings normales: un r"..." no cruza lineas.
+                    // Sin este corte se tragaba codigo hasta la proxima '"' o
+                    // hasta EOF sin ningun error. Para multilinea usar """...""".
+                    throw NimbleError("Unterminated raw string literal (missing closing '\"' before end of line)", startLine);
+                }
                 val += s[pos++];
             }
-            if (pos < s.size()) pos++;
+            if (pos >= s.size()) {
+                throw NimbleError("Unterminated raw string literal (missing closing '\"')", startLine);
+            }
+            pos++; // consumir la comilla de cierre
             return {Tok::RAW_STRING, val, 0, startLine};
         }
         if (isalpha((unsigned char)c) || c == '_') {
@@ -627,7 +921,7 @@ private:
             }
             seen.insert(pr.name);
             if (match(Tok::COLON)) { expect(Tok::NAME, "parameter type"); }
-            if (match(Tok::ASSIGN)) pr.defaultVal = parseExpr();
+            if (match(Tok::ASSIGN)) pr.defaultVal = parseTernary(); // no parseExpr(): la coma separa parametros
             params.push_back(pr);
             if (!match(Tok::COMMA)) break;
         }
@@ -957,9 +1251,15 @@ private:
     // ---- expresiones ----
     ExprPtr parseExpr() { return parseAssign(); }
 
-    ExprPtr parseAssign() {
+    // Igual que parseExpr(), pero SIN la asignacion multiple sin corchetes
+    // (a, b = 1, 2). Para lugares donde la coma es un SEPARADOR (argumentos,
+    // elementos de lista, valores de mapa): ahi "1, b = 2" no es una
+    // desestructuracion, es "1" y despues "b = 2".
+    ExprPtr parseElemExpr() { return parseAssign(false); }
+
+    ExprPtr parseAssign(bool allowTuple = true) {
         ExprPtr first = parseTernary();
-        if (!check(Tok::COMMA)) {
+        if (!allowTuple || !check(Tok::COMMA)) {
             static const std::vector<std::pair<Tok,std::string>> ops = {
                 {Tok::ASSIGN, "="}, {Tok::PLUS_EQ, "+="}, {Tok::MINUS_EQ, "-="},
                 {Tok::STAR_EQ, "*="}, {Tok::SLASH_EQ, "/="}, {Tok::PERCENT_EQ, "%="}
@@ -968,7 +1268,7 @@ private:
                 if (check(tk)) {
                     int ln = cur().line;
                     advance();
-                    ExprPtr value = parseAssign();
+                    ExprPtr value = parseAssign(allowTuple);
                     auto e = mkExpr(EK::Assign); e->line = ln;
                     e->op = sym; e->a = first; e->b = value;
                     return e;
@@ -1210,15 +1510,15 @@ private:
                         int spLn = cur().line;
                         advance();
                         auto sp = mkExpr(EK::Spread); sp->line = spLn;
-                        sp->a = parseExpr();
+                        sp->a = parseElemExpr();
                         call->list.push_back(sp);
                     } else if (check(Tok::NAME) && t[p+1].type == Tok::COLON) {
                         std::string nm = advance().text;
                         advance();
-                        ExprPtr val = parseExpr();
+                        ExprPtr val = parseElemExpr();
                         call->namedArgs.push_back({nm, val});
                     } else {
-                        call->list.push_back(parseExpr());
+                        call->list.push_back(parseElemExpr());
                     }
                     if (!match(Tok::COMMA)) break;
                 }
@@ -1259,10 +1559,10 @@ private:
             int ln = cur().line;
             advance();
             auto sp = mkExpr(EK::Spread); sp->line = ln;
-            sp->a = parseExpr();
+            sp->a = parseElemExpr();
             return sp;
         }
-        return parseExpr();
+        return parseElemExpr();
     }
 
     // Listas multilínea: [ ... ] acepta saltos de línea internos, igual que
@@ -1307,7 +1607,7 @@ private:
         while (!check(Tok::RBRACE)) {
             if (check(Tok::SPREAD)) {
                 advance();
-                ExprPtr operand = parseExpr();
+                ExprPtr operand = parseElemExpr();
                 e->mapEntries.push_back({nullptr, operand});
             } else {
                 ExprPtr key;
@@ -1317,7 +1617,7 @@ private:
                 ExprPtr val;
                 if (match(Tok::COLON)) {
                     skipNewlinesInsideBrackets();
-                    val = parseExpr();
+                    val = parseElemExpr();
                 } else {
                     auto v = mkExpr(EK::Var); v->name = keyName; val = v;
                 }
@@ -1471,6 +1771,19 @@ struct MapObj {
         index[k] = entries.size();
         entries.push_back({k, val});
     }
+    // Removes a key, preserving insertion order of the remaining entries.
+    // Was previously missing entirely -- has()/get()/set() existed but there
+    // was no way at all to delete a key from a map once added. O(n) for the
+    // erase + index shift, which is fine: has()/get()/set() stay O(1).
+    bool remove(const std::string& k) {
+        auto it = index.find(k);
+        if (it == index.end()) return false;
+        size_t i = it->second;
+        entries.erase(entries.begin() + (long)i);
+        index.erase(it);
+        for (auto& e : index) if (e.second > i) e.second--;
+        return true;
+    }
 };
 
 using NativeFn = std::function<Value(std::vector<Value>&, std::vector<std::pair<std::string,Value>>&, Interpreter&)>;
@@ -1566,10 +1879,10 @@ struct Env : GCTracked, std::enable_shared_from_this<Env> {
         }
         vars[n] = val;
     }
-    // Todos los nombres visibles desde este entorno (variables locales +
-    // toda la cadena de padres), sin duplicados. Sólo se usa para armar
-    // sugerencias de "¿quisiste decir...?" en errores de variable
-    // indefinida, así que no importa que sea O(profundidad de scopes).
+    // All names visible from this scope (local variables + the whole
+    // parent chain), without duplicates. Only used to build "did you
+    // mean...?" suggestions on undefined-variable errors, so it's fine
+    // that it's O(scope depth).
     std::vector<std::string> allNames() {
         std::vector<std::string> out;
         std::unordered_set<std::string> seen;
@@ -1746,13 +2059,20 @@ struct ThrowSignal { Value value; std::string message; };
 // ============================================================
 static std::string numToStr(double d) {
     if (std::isnan(d)) return "nan";
+    if (std::isinf(d)) return d < 0 ? "-inf" : "inf";
     if (d == (long long)d && std::abs(d) < 1e15) {
         char buf[64]; snprintf(buf, sizeof(buf), "%lld", (long long)d);
         return buf;
     }
-    std::ostringstream oss;
-    oss << d;
-    return oss.str();
+    // std::to_chars produces the shortest decimal string that round-trips
+    // back to the exact same double -- unlike ostringstream's default
+    // 6-significant-digit precision, this doesn't silently truncate values
+    // like 3.14159265358979 down to "3.14159" or 1234567.891 down to
+    // "1.23457e+06". See bug report: numbers were losing precision in
+    // print(), string(), concatenation and json.encode().
+    char buf[64];
+    auto res = std::to_chars(buf, buf + sizeof(buf), d);
+    return std::string(buf, res.ptr);
 }
 
 std::string toDisplayString(const Value& val);
@@ -1936,6 +2256,65 @@ static void reqNonEmptyList(const std::shared_ptr<ListObj>& l, const char* fn) {
     if (l->items.empty()) throw NimbleError(std::string(fn) + "(): list must not be empty");
 }
 
+// ---- MD5 (RFC 1321) ----
+// Devuelve los 16 bytes crudos del digest. Trabaja sobre bytes (std::string
+// puede llevar \0 y cualquier valor), asi que sirve igual para texto y para
+// datos binarios (p. ej. lo que produce hex.decode).
+static std::string md5Raw(const std::string& in) {
+    // K[i] = floor(2^32 * |sin(i + 1)|), tal como define el RFC
+    static uint32_t K[64];
+    static bool kInit = false;
+    if (!kInit) {
+        for (int i = 0; i < 64; i++)
+            K[i] = (uint32_t)(std::fabs(std::sin((double)(i + 1))) * 4294967296.0);
+        kInit = true;
+    }
+    static const int S[64] = {
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+        5,  9, 14, 20, 5,  9, 14, 20, 5,  9, 14, 20, 5,  9, 14, 20,
+        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21
+    };
+    uint32_t a0 = 0x67452301u, b0 = 0xefcdab89u, c0 = 0x98badcfeu, d0 = 0x10325476u;
+
+    // relleno: 0x80, ceros hasta 56 mod 64, y la longitud en bits (8 bytes LE)
+    std::string msg = in;
+    uint64_t bitLen = (uint64_t)in.size() * 8;
+    msg += (char)0x80;
+    while (msg.size() % 64 != 56) msg += (char)0;
+    for (int i = 0; i < 8; i++) msg += (char)((bitLen >> (8 * i)) & 0xFF);
+
+    for (size_t off = 0; off < msg.size(); off += 64) {
+        uint32_t M[16];
+        for (int i = 0; i < 16; i++) {
+            const unsigned char* q = (const unsigned char*)msg.data() + off + i * 4;
+            M[i] = (uint32_t)q[0] | ((uint32_t)q[1] << 8) | ((uint32_t)q[2] << 16) | ((uint32_t)q[3] << 24);
+        }
+        uint32_t A = a0, B = b0, C = c0, D = d0;
+        for (int i = 0; i < 64; i++) {
+            uint32_t F; int g;
+            if (i < 16)      { F = (B & C) | (~B & D); g = i; }
+            else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+            else if (i < 48) { F = B ^ C ^ D;          g = (3 * i + 5) % 16; }
+            else             { F = C ^ (B | ~D);       g = (7 * i) % 16; }
+            F = F + A + K[i] + M[g];
+            A = D; D = C; C = B;
+            B = B + ((F << S[i]) | (F >> (32 - S[i])));
+        }
+        a0 += A; b0 += B; c0 += C; d0 += D;
+    }
+    std::string out;
+    for (uint32_t v : {a0, b0, c0, d0})
+        for (int i = 0; i < 4; i++) out += (char)((v >> (8 * i)) & 0xFF);
+    return out;
+}
+static std::string toHexLower(const std::string& raw) {
+    static const char* digits = "0123456789abcdef";
+    std::string out; out.reserve(raw.size() * 2);
+    for (unsigned char c : raw) { out += digits[c >> 4]; out += digits[c & 0xF]; }
+    return out;
+}
+
 // ---- utilidades para csv ----
 static std::vector<std::vector<std::string>> parseCsvRows(const std::string& text) {
     std::vector<std::vector<std::string>> rows;
@@ -2069,16 +2448,16 @@ public:
     std::string confinePath(const std::string& rawPath, const char* opName) {
         if (!permissions.confineToRoot) return rawPath;
         namespace fs = std::filesystem;
-        fs::path root = fs::absolute(fs::path(permissions.sandboxRoot)).lexically_normal();
-        fs::path candidate = fs::path(rawPath);
+        fs::path root = fs::absolute(nimblePath(permissions.sandboxRoot)).lexically_normal();
+        fs::path candidate = nimblePath(rawPath);
         fs::path full = (candidate.is_absolute() ? candidate : (root / candidate)).lexically_normal();
-        std::string rootStr = root.generic_string();
-        std::string fullStr = full.generic_string();
+        std::string rootStr = nimblePathGeneric(root);
+        std::string fullStr = nimblePathGeneric(full);
         bool inside = fullStr.size() >= rootStr.size() && fullStr.compare(0, rootStr.size(), rootStr) == 0 &&
                       (fullStr.size() == rootStr.size() || fullStr[rootStr.size()] == '/');
         if (!inside)
             throw NimbleError(std::string(opName) + ": access outside the sandbox ('" + rawPath + "')");
-        return full.string();
+        return nimblePathStr(full);
     }
 
     // ================================================================
@@ -2227,6 +2606,26 @@ public:
             }
             case SK::For: {
                 Value iterable = eval(st->iterable, env);
+                if (iterable.isMap()) {
+                    // Iteracion perezosa (open_lines): un mapa con "__next__" se
+                    // recorre de a un elemento sin copiar nada; null = fin.
+                    Value nx = iterable.asMap()->get("__next__");
+                    if (nx.isFunc()) {
+                        if (!st->iterVar2.empty())
+                            throw NimbleError("for with two variables is not supported over a line reader "
+                                               "(use a counter variable instead)");
+                        while (true) {
+                            checkLimits();
+                            Value item = callFunction(nx, {}, {});
+                            if (item.isNull()) break;
+                            env->define(st->iterVar, item);
+                            ExecResult r = execBlock(st->body, env);
+                            if (r.flow == Flow::Break) break;
+                            if (r.flow == Flow::Return) return r;
+                        }
+                        return {};
+                    }
+                }
                 if (iterable.isMap() && !st->iterVar2.empty()) {
                     for (auto& e : iterable.asMap()->entries) {
                         checkLimits();
@@ -2422,7 +2821,7 @@ public:
                 // resolving the already-registered native module.
                 static const std::set<std::string> builtinNames = {
                     "math", "random", "time", "system", "json", "path", "http", "regex", "hex",
-                    "env", "csv", "gc", "net"
+                    "env", "csv", "gc", "net", "hash"
                 };
                 bool isBuiltin = !st->moduleIsLiteral && st->modulePath.find('.') == std::string::npos &&
                                  builtinNames.count(st->modulePath);
@@ -3176,25 +3575,25 @@ public:
         return out;
     }
     static std::string moduleDefaultName(const std::string& raw, bool isLiteral) {
-        if (isLiteral) return std::filesystem::path(raw).stem().string();
+        if (isLiteral) return nimblePathStr(nimblePath(raw).stem());
         size_t pos = raw.find_last_of('.');
         return pos == std::string::npos ? raw : raw.substr(pos + 1);
     }
     static std::string moduleKey(const std::string& scriptDir, const std::string& rawPath) {
         namespace fs = std::filesystem;
-        fs::path p(rawPath);
-        fs::path full = p.is_absolute() ? p : fs::path(scriptDir) / p;
-        return full.lexically_normal().generic_string();
+        fs::path p = nimblePath(rawPath);
+        fs::path full = p.is_absolute() ? p : nimblePath(scriptDir) / p;
+        return nimblePathGeneric(full.lexically_normal());
     }
 
     Value loadModule(const std::string& rawPath) {
         namespace fs = std::filesystem;
         std::string key = moduleKey(scriptDir, rawPath);
         if (permissions.confineToRoot) {
-            fs::path root = fs::absolute(fs::path(permissions.sandboxRoot)).lexically_normal();
-            fs::path full = fs::absolute(fs::path(key)).lexically_normal();
-            std::string rootStr = root.generic_string();
-            std::string fullStr = full.generic_string();
+            fs::path root = fs::absolute(nimblePath(permissions.sandboxRoot)).lexically_normal();
+            fs::path full = fs::absolute(nimblePath(key)).lexically_normal();
+            std::string rootStr = nimblePathGeneric(root);
+            std::string fullStr = nimblePathGeneric(full);
             bool inside = fullStr.size() >= rootStr.size() && fullStr.compare(0, rootStr.size(), rootStr) == 0 &&
                           (fullStr.size() == rootStr.size() || fullStr[rootStr.size()] == '/');
             if (!inside) throw NimbleError("use: module outside the sandbox ('" + rawPath + "')");
@@ -3213,7 +3612,7 @@ public:
                 throw NimbleError("Module not bundled into the executable: " + key);
             src = it->second;
         } else {
-            std::ifstream f(key, std::ios::binary);
+            std::ifstream f(nimblePath(key), std::ios::binary);
             if (!f) throw NimbleError("Could not import module '" + rawPath + "' (not found: " + key + ")");
             std::ostringstream ss; ss << f.rdbuf();
             src = ss.str();
@@ -3296,7 +3695,19 @@ static void nimbleCloseSocket(socket_t s) {
 
 static std::string nimbleSocketErr() {
 #ifdef _WIN32
-    return "código " + std::to_string(WSAGetLastError());
+    // Texto del propio sistema (en el idioma del usuario) + el codigo, en UTF-8.
+    int code = WSAGetLastError();
+    wchar_t* buf = nullptr;
+    DWORD n = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                             nullptr, (DWORD)code, 0, (LPWSTR)&buf, 0, nullptr);
+    std::string msg;
+    if (n > 0 && buf) {
+        msg = nimbleWideToUtf8(std::wstring(buf, n));
+        LocalFree(buf);
+    }
+    while (!msg.empty() && (msg.back() == '\r' || msg.back() == '\n' || msg.back() == ' ' || msg.back() == '.')) msg.pop_back();
+    if (msg.empty()) return "código " + std::to_string(code);
+    return msg + " (código " + std::to_string(code) + ")";
 #else
     return std::string(strerror(errno));
 #endif
@@ -3323,12 +3734,19 @@ static void nimbleSetTimeout(socket_t fd, double seconds) {
 // (conexión, server o socket UDP), sin necesidad de .close() explícito.
 struct NetSocket {
     socket_t fd = NIMBLE_INVALID_SOCKET;
+    // Bytes ya leídos del socket real pero todavía no entregados al script:
+    // recv_line() necesita poder leer "de más" (hasta encontrar un '\n') y
+    // guardar el resto para la próxima llamada. recv() también consume de
+    // acá primero, así intercalar recv()/recv_line() en la misma conexión
+    // no pierde ni reordena bytes.
+    std::string buf;
     ~NetSocket() { nimbleCloseSocket(fd); }
 };
 
 // conn: el objeto que devuelven net.tcp_connect() y server.accept().
 static Value nimbleMakeConn(std::shared_ptr<NetSocket> sock, const std::string& remoteHost, int remotePort) {
     auto m = std::make_shared<MapObj>();
+    m->set("fd", Value((double)sock->fd)); // uso interno de net.poll(); no documentado como API de "lectura" normal
     m->set("remote_host", Value(remoteHost));
     m->set("remote_port", Value((double)remotePort));
     m->set("send", makeNative("send", [sock](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
@@ -3342,14 +3760,135 @@ static Value nimbleMakeConn(std::shared_ptr<NetSocket> sock, const std::string& 
         }
         return Value((double)sent);
     }));
+    m->set("send_nb", makeNative("send_nb", [sock](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
+        // v0.16. Contraparte no bloqueante de conn.send(): UN solo intento,
+        // nunca reintenta y nunca bloquea. Devuelve cuantos bytes acepto el
+        // kernel esta vez -- puede ser parcial, o 0 si el socket todavia
+        // esta lleno -- para que el script arme su propia cola de salida
+        // por conexion y siga con la siguiente en vez de quedarse esperando
+        // a esta (el problema real de conn.send(): su timeout es por cada
+        // ::send() interno del while, no un limite total, asi que un peer
+        // que drena de a poquito puede hacerlo tardar mucho mas que
+        // set_timeout()).
+        //
+        // No deja el fd en modo no bloqueante (eso rompería el timeout de
+        // conn.recv() en el mismo socket, que usa SO_RCVTIMEO). En cambio
+        // pregunta con poll(..., 0ms) si hay lugar en el buffer de salida
+        // antes de mandar, y hace como mucho un ::send() no bloqueante
+        // (MSG_DONTWAIT; ver v0.17 más abajo). Se usa junto con
+        // net.poll([{"sock": conn, "write": true}, ...]) para no tener que
+        // pagar ese poll() de nuevo por cada intento cuando se manda a
+        // muchas conexiones en el mismo ciclo.
+        if (sock->fd == NIMBLE_INVALID_SOCKET) throw NimbleError("conn.send_nb(): el socket ya está cerrado");
+        const std::string& data = reqStr(a, 0, "conn.send_nb");
+        if (data.empty()) return Value((double)0);
+#ifdef _WIN32
+        WSAPOLLFD pfd{sock->fd, POLLOUT, 0};
+        int rc = WSAPoll(&pfd, 1, 0);
+#else
+        pollfd pfd{sock->fd, POLLOUT, 0};
+        int rc = ::poll(&pfd, 1, 0);
+#endif
+        if (rc <= 0 || !(pfd.revents & POLLOUT)) return Value((double)0);
+        // v0.17: el poll() de arriba solo garantiza que hay ALGO de lugar,
+        // no lugar para todo `data`. Con un ::send() bloqueante normal, si
+        // data.size() era mayor que el espacio libre, el kernel esperaba
+        // hasta que cupiera todo -- o sea, send_nb() bloqueaba (y con el, el
+        // loop entero). Ahora este unico send es no bloqueante de verdad:
+        // acepta lo que quepa (parcial) o falla con EAGAIN/EWOULDBLOCK, que
+        // mas abajo se traduce a "0 bytes".
+#ifdef _WIN32
+        // Windows no tiene MSG_DONTWAIT: se pone el socket en modo no
+        // bloqueante solo durante este send y se restaura enseguida (asi
+        // conn.recv() sigue usando SO_RCVTIMEO como siempre).
+        u_long nbOn = 1, nbOff = 0;
+        ioctlsocket(sock->fd, FIONBIO, &nbOn);
+        long n = (long)::send(sock->fd, data.data(), (int)data.size(), 0);
+        int sendErr = (n < 0) ? WSAGetLastError() : 0;
+        ioctlsocket(sock->fd, FIONBIO, &nbOff);
+        if (n < 0) WSASetLastError(sendErr); // que nimbleSocketErr() vea el error del send, no el del ioctlsocket
+#else
+        long n = (long)::send(sock->fd, data.data(), data.size(), MSG_DONTWAIT);
+#endif
+        if (n < 0) {
+            // Si justo se llenó el buffer entre el poll() y el send() (raro
+            // pero posible), no es un error real del socket: el llamador
+            // simplemente lo reintenta en el próximo ciclo. Cualquier otro
+            // error (conexión cortada, etc.) sí se propaga como siempre.
+#ifdef _WIN32
+            if (WSAGetLastError() == WSAEWOULDBLOCK) return Value((double)0);
+#else
+            if (errno == EWOULDBLOCK || errno == EAGAIN) return Value((double)0);
+#endif
+            throw NimbleError("conn.send_nb(): " + nimbleSocketErr());
+        }
+        return Value((double)n);
+    }));
+    m->set("set_nodelay", makeNative("set_nodelay", [sock](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
+        // v0.16. Desactiva el algoritmo de Nagle (TCP_NODELAY): sin esto el
+        // kernel puede retener un envio chico un rato esperando juntarlo con
+        // el siguiente en vez de mandarlo ya. Pensado para trafico
+        // interactivo/chunked en general (chat, streaming, cualquier
+        // protocolo que ya arma sus propios paquetes) -- no es algo
+        // especifico de un tipo de script.
+        if (sock->fd == NIMBLE_INVALID_SOCKET) throw NimbleError("conn.set_nodelay(): el socket ya está cerrado");
+        int yes = a.empty() ? 1 : (truthy(reqArg(a, 0, "conn.set_nodelay")) ? 1 : 0);
+#ifndef TCP_NODELAY
+#define TCP_NODELAY 0x0001
+#endif
+        setsockopt(sock->fd, IPPROTO_TCP, TCP_NODELAY, (const char*)&yes, sizeof(yes));
+        return Value();
+    }));
     m->set("recv", makeNative("recv", [sock](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
         if (sock->fd == NIMBLE_INVALID_SOCKET) throw NimbleError("conn.recv(): el socket ya está cerrado");
         int maxLen = a.empty() ? 4096 : (int)reqNum(a, 0, "conn.recv");
         if (maxLen <= 0) maxLen = 4096;
+        // Primero se sirve lo que recv_line() ya haya leído del socket y
+        // dejado pendiente (ver comentario en NetSocket::buf).
+        if (!sock->buf.empty()) {
+            size_t take = std::min((size_t)maxLen, sock->buf.size());
+            std::string out = sock->buf.substr(0, take);
+            sock->buf.erase(0, take);
+            return Value(out);
+        }
         std::vector<char> buf((size_t)maxLen);
         long n = (long)::recv(sock->fd, buf.data(), maxLen, 0);
         if (n < 0) throw NimbleError("conn.recv(): " + nimbleSocketErr());
         return Value(std::string(buf.data(), (size_t)n)); // "" (n==0) => el otro lado cerró la conexión
+    }));
+    m->set("recv_line", makeNative("recv_line", [sock](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
+        if (sock->fd == NIMBLE_INVALID_SOCKET) throw NimbleError("conn.recv_line(): el socket ya está cerrado");
+        // Límite de seguridad: sin esto, un peer que nunca manda '\n' haría
+        // crecer sock->buf sin límite (mismo tipo de problema que llevó al
+        // fix de json.decode en v0.9 -- entrada hostil/rota no debería
+        // poder colgar ni tumbar el proceso).
+        int maxLen = a.empty() ? 65536 : (int)reqNum(a, 0, "conn.recv_line");
+        if (maxLen <= 0) maxLen = 65536;
+        while (true) {
+            size_t nl = sock->buf.find('\n');
+            if (nl != std::string::npos) {
+                std::string line = sock->buf.substr(0, nl);
+                if (!line.empty() && line.back() == '\r') line.pop_back(); // acepta LF y CRLF
+                sock->buf.erase(0, nl + 1);
+                return Value(line);
+            }
+            if (sock->buf.size() >= (size_t)maxLen)
+                throw NimbleError("conn.recv_line(): línea más larga que el límite (" +
+                                   std::to_string(maxLen) + " bytes) sin encontrar '\\n'");
+            char chunk[4096];
+            long n = (long)::recv(sock->fd, chunk, sizeof(chunk), 0);
+            if (n < 0) throw NimbleError("conn.recv_line(): " + nimbleSocketErr());
+            if (n == 0) {
+                // El otro lado cerró la conexión. Si quedó texto sin '\n'
+                // final, se devuelve como última línea (igual que readline()
+                // en la mayoría de los lenguajes); si no quedó nada, nil.
+                if (sock->buf.empty()) return Value();
+                std::string rest = sock->buf;
+                sock->buf.clear();
+                return Value(rest);
+            }
+            sock->buf.append(chunk, (size_t)n);
+        }
     }));
     m->set("close", makeNative("close", [sock](std::vector<Value>&, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
         nimbleCloseSocket(sock->fd);
@@ -3366,6 +3905,7 @@ static Value nimbleMakeConn(std::shared_ptr<NetSocket> sock, const std::string& 
 // server: lo que devuelve net.tcp_listen().
 static Value nimbleMakeServer(std::shared_ptr<NetSocket> sock, int boundPort) {
     auto m = std::make_shared<MapObj>();
+    m->set("fd", Value((double)sock->fd)); // uso interno de net.poll()
     m->set("port", Value((double)boundPort));
     m->set("accept", makeNative("accept", [sock](std::vector<Value>&, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
         if (sock->fd == NIMBLE_INVALID_SOCKET) throw NimbleError("server.accept(): el socket ya está cerrado");
@@ -3386,6 +3926,78 @@ static Value nimbleMakeServer(std::shared_ptr<NetSocket> sock, int boundPort) {
     }));
     m->set("set_timeout", makeNative("set_timeout", [sock](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
         nimbleSetTimeout(sock->fd, reqNum(a, 0, "server.set_timeout"));
+        return Value();
+    }));
+    return Value(m);
+}
+
+// ---- lectura de archivos linea a linea (v0.20) ----
+// Estado de un lector de lineas perezoso (open_lines). Lee el archivo por
+// trozos y entrega una linea por llamada, asi que el uso de memoria es
+// constante (un trozo + la linea en curso) sin importar el tamano del
+// archivo. Misma semantica que conn.recv_line(): acepta LF y CRLF, la ultima
+// linea se entrega aunque no termine en salto de linea, y al final devuelve
+// null.
+#ifndef NIMBLE_LINE_CHUNK
+#define NIMBLE_LINE_CHUNK 65536   // solo se redefine en las pruebas (bordes de trozo)
+#endif
+struct LineReader {
+    std::ifstream f;
+    std::string buf;       // bytes ya leidos del archivo y aun no entregados
+    size_t pos = 0;        // inicio de lo no entregado dentro de buf
+    size_t scanned = 0;    // bytes de buf[pos..] ya revisados sin hallar '\n'
+                           // (evita re-escanear una linea muy larga en cada trozo)
+    bool eof = false;
+    bool closed = false;
+};
+static inline void nimbleStripCR(std::string& s) { if (!s.empty() && s.back() == '\r') s.pop_back(); }
+
+// Siguiente linea en `out`; false si no quedan mas.
+static bool nimbleLineReaderNext(LineReader& r, std::string& out) {
+    while (true) {
+        size_t nl = r.buf.find('\n', r.pos + r.scanned);
+        if (nl != std::string::npos) {
+            out.assign(r.buf, r.pos, nl - r.pos);
+            r.pos = nl + 1; r.scanned = 0;
+            nimbleStripCR(out);
+            return true;
+        }
+        r.scanned = r.buf.size() - r.pos;         // todo lo que hay ya se reviso
+        if (r.eof) {
+            if (r.pos >= r.buf.size()) return false;
+            out.assign(r.buf, r.pos, std::string::npos);   // ultima linea sin '\n'
+            r.buf.clear(); r.pos = 0; r.scanned = 0;
+            nimbleStripCR(out);
+            return true;
+        }
+        if (r.pos > 0) { r.buf.erase(0, r.pos); r.pos = 0; }   // compactar antes de rellenar
+        static thread_local std::string chunk(NIMBLE_LINE_CHUNK, '\0');
+        r.f.read(&chunk[0], (std::streamsize)chunk.size());
+        std::streamsize n = r.f.gcount();
+        if (n <= 0) { r.eof = true; r.f.close(); }   // liberar el descriptor apenas se termina
+        else r.buf.append(chunk.data(), (size_t)n);
+    }
+}
+
+static Value nimbleMakeLineReader(std::shared_ptr<LineReader> r) {
+    auto m = std::make_shared<MapObj>();
+    auto nextFn = makeNative("read_line", [r](std::vector<Value>&, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
+        if (r->closed) throw NimbleError("read_line(): el archivo ya está cerrado");
+        std::string line;
+        if (!nimbleLineReaderNext(*r, line)) return Value();   // null = fin del archivo
+        return Value(line);
+    });
+    m->set("read_line", nextFn);
+    // Protocolo de iteracion de `for`: un mapa con una funcion "__next__" se
+    // recorre llamandola hasta que devuelva null. (Nombre con guiones bajos
+    // para no chocar con campos de usuario como el clasico `node.next`.)
+    m->set("__next__", nextFn);
+    m->set("close", makeNative("close", [r](std::vector<Value>&, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
+        if (!r->closed) {
+            r->closed = true;
+            if (r->f.is_open()) r->f.close();
+            r->buf.clear(); r->buf.shrink_to_fit();
+        }
         return Value();
     }));
     return Value(m);
@@ -3432,6 +4044,14 @@ void Interpreter::setupGlobals() {
         auto out = std::make_shared<ListObj>();
         for (auto& e : m->entries) out->items.push_back(Value(e.first));
         return Value(out);
+    }));
+    g->define("remove", makeNative("remove", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) {
+        // remove(map, key) -- deletes a key from a map, if present. Returns
+        // true if the key existed and was removed, false otherwise. There
+        // was previously no way at all to remove a key from a map.
+        auto m = reqMap(a, 0, "remove");
+        std::string key = reqStr(a, 1, "remove");
+        return Value(m->remove(key));
     }));
     g->define("values", makeNative("values", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) {
         auto m = reqMap(a, 0, "values");
@@ -3668,16 +4288,91 @@ void Interpreter::setupGlobals() {
         if (!interp.permissions.allowFileRead) throw NimbleError("read(): disabled by the host (sandbox)");
         const std::string& raw = reqStr(a, 0, "read");
         std::string path = interp.confinePath(raw, "read");
-        std::ifstream f(path, std::ios::binary);
+        std::ifstream f(nimblePath(path), std::ios::binary);
         if (!f) throw NimbleError("Could not read file: " + raw);
         std::ostringstream ss; ss << f.rdbuf();
         return Value(ss.str());
+    }));
+    // read_lines(ruta) -> lista con las lineas del archivo, sin terminadores
+    // (LF o CRLF). Sin elemento vacio final si el archivo termina en salto de
+    // linea; archivo vacio -> lista vacia.
+    g->define("read_lines", makeNative("read_lines", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
+        if (!interp.permissions.allowFileRead) throw NimbleError("read_lines(): disabled by the host (sandbox)");
+        const std::string& raw = reqStr(a, 0, "read_lines");
+        std::string path = interp.confinePath(raw, "read_lines");
+        std::ifstream f(nimblePath(path), std::ios::binary);
+        if (!f) throw NimbleError("Could not read file: " + raw);
+        std::string text;
+        f.seekg(0, std::ios::end);
+        std::streamoff sz = f.tellg();
+        if (sz >= 0) {                       // archivo normal: una sola lectura, sin copias extra
+            f.seekg(0, std::ios::beg);
+            text.resize((size_t)sz);
+            f.read(&text[0], (std::streamsize)sz);
+            text.resize((size_t)f.gcount());
+        } else {                             // pipes, /proc, etc.: sin tamano conocido
+            f.clear(); f.seekg(0, std::ios::beg);
+            std::ostringstream ss; ss << f.rdbuf();
+            text = ss.str();
+        }
+        auto out = std::make_shared<ListObj>();
+        size_t start = 0, n = text.size();
+        while (start < n) {
+            size_t nl = text.find('\n', start);
+            size_t end = (nl == std::string::npos) ? n : nl;
+            size_t e2 = end;
+            if (e2 > start && text[e2 - 1] == '\r') e2--;
+            out->items.push_back(Value(text.substr(start, e2 - start)));
+            if (nl == std::string::npos) break;
+            start = nl + 1;
+        }
+        return Value(out);
+    }));
+    // open_lines(ruta) -> lector perezoso: `for linea in open_lines(ruta)` o
+    // r.read_line() (null al final). Memoria constante; para archivos grandes.
+    g->define("open_lines", makeNative("open_lines", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
+        if (!interp.permissions.allowFileRead) throw NimbleError("open_lines(): disabled by the host (sandbox)");
+        const std::string& raw = reqStr(a, 0, "open_lines");
+        std::string path = interp.confinePath(raw, "open_lines");
+        auto r = std::make_shared<LineReader>();
+        r->f.open(nimblePath(path), std::ios::binary);
+        if (!r->f) throw NimbleError("Could not read file: " + raw);
+        return nimbleMakeLineReader(r);
+    }));
+    g->define("file_size", makeNative("file_size", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
+        if (!interp.permissions.allowFileRead) throw NimbleError("file_size(): disabled by the host (sandbox)");
+        const std::string& raw = reqStr(a, 0, "file_size");
+        std::string path = interp.confinePath(raw, "file_size");
+        std::error_code ec;
+        auto sz = std::filesystem::file_size(nimblePath(path), ec);
+        if (ec) throw NimbleError("file_size(): " + raw + ": " + ec.message());
+        return Value((double)sz);
+    }));
+    g->define("read_range", makeNative("read_range", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
+        // Lee como maximo `length` bytes empezando en `offset`, sin cargar
+        // el resto del archivo. Pensado para servir video/audio con Range
+        // requests y para leer archivos grandes en pedazos (ej. las
+        // ultimas N lineas de un log sin traerlo entero a memoria).
+        if (!interp.permissions.allowFileRead) throw NimbleError("read_range(): disabled by the host (sandbox)");
+        const std::string& raw = reqStr(a, 0, "read_range");
+        std::string path = interp.confinePath(raw, "read_range");
+        long offset = (long)reqNum(a, 1, "read_range");
+        long length = (long)reqNum(a, 2, "read_range");
+        if (offset < 0 || length < 0) throw NimbleError("read_range(): offset/length must not be negative");
+        std::ifstream f(nimblePath(path), std::ios::binary);
+        if (!f) throw NimbleError("Could not read file: " + raw);
+        f.seekg(offset, std::ios::beg);
+        std::vector<char> buf((size_t)length);
+        f.read(buf.data(), length);
+        // Al final del archivo f.read() deja menos bytes de los pedidos --
+        // no es un error, gcount() dice cuantos se leyeron de verdad.
+        return Value(std::string(buf.data(), (size_t)f.gcount()));
     }));
     g->define("write", makeNative("write", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
         if (!interp.permissions.allowFileWrite) throw NimbleError("write(): disabled by the host (sandbox)");
         const std::string& raw = reqStr(a, 0, "write");
         std::string path = interp.confinePath(raw, "write");
-        std::ofstream f(path, std::ios::binary);
+        std::ofstream f(nimblePath(path), std::ios::binary);
         if (!f) throw NimbleError("Could not write file: " + raw);
         f << reqStr(a, 1, "write");
         return Value();
@@ -3686,7 +4381,7 @@ void Interpreter::setupGlobals() {
         if (!interp.permissions.allowFileWrite) throw NimbleError("append(): disabled by the host (sandbox)");
         const std::string& raw = reqStr(a, 0, "append");
         std::string path = interp.confinePath(raw, "append");
-        std::ofstream f(path, std::ios::binary | std::ios::app);
+        std::ofstream f(nimblePath(path), std::ios::binary | std::ios::app);
         if (!f) throw NimbleError("Could not open file: " + raw);
         f << reqStr(a, 1, "append");
         return Value();
@@ -3694,13 +4389,34 @@ void Interpreter::setupGlobals() {
     g->define("exists", makeNative("exists", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
         if (!interp.permissions.allowFileRead) throw NimbleError("exists(): disabled by the host (sandbox)");
         std::string path = interp.confinePath(reqStr(a, 0, "exists"), "exists");
+#ifdef _WIN32
+        std::error_code ec;
+        return Value(std::filesystem::exists(nimblePath(path), ec) && !ec);
+#else
         struct stat st;
         return Value(stat(path.c_str(), &st) == 0);
+#endif
+    }));
+    g->define("is_dir", makeNative("is_dir", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
+        if (!interp.permissions.allowFileRead) throw NimbleError("is_dir(): disabled by the host (sandbox)");
+        std::string path = interp.confinePath(reqStr(a, 0, "is_dir"), "is_dir");
+        std::error_code ec;
+        return Value(std::filesystem::is_directory(nimblePath(path), ec) && !ec);
+    }));
+    g->define("is_file", makeNative("is_file", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
+        if (!interp.permissions.allowFileRead) throw NimbleError("is_file(): disabled by the host (sandbox)");
+        std::string path = interp.confinePath(reqStr(a, 0, "is_file"), "is_file");
+        std::error_code ec;
+        return Value(std::filesystem::is_regular_file(nimblePath(path), ec) && !ec);
     }));
     g->define("delete", makeNative("delete", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
         if (!interp.permissions.allowFileSystemOps) throw NimbleError("delete(): disabled by the host (sandbox)");
         std::string path = interp.confinePath(reqStr(a, 0, "delete"), "delete");
+#ifdef _WIN32
+        return Value(_wremove(nimbleUtf8ToWide(path).c_str()) == 0);
+#else
         return Value(std::remove(path.c_str()) == 0);
+#endif
     }));
     g->define("listdir", makeNative("listdir", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
         if (!interp.permissions.allowFileSystemOps) throw NimbleError("listdir(): disabled by the host (sandbox)");
@@ -3708,10 +4424,10 @@ void Interpreter::setupGlobals() {
         std::string path = interp.confinePath(raw, "listdir");
         auto out = std::make_shared<ListObj>();
         std::error_code ec;
-        std::filesystem::directory_iterator it(path, ec);
+        std::filesystem::directory_iterator it(nimblePath(path), ec);
         if (ec) throw NimbleError("Could not open directory: " + raw);
         for (const auto& entry : it) {
-            out->items.push_back(Value(entry.path().filename().string()));
+            out->items.push_back(Value(nimblePathStr(entry.path().filename())));
         }
         return Value(out);
     }));
@@ -3721,13 +4437,17 @@ void Interpreter::setupGlobals() {
 #ifndef _WIN32
         return Value(mkdir(path.c_str(), 0755) == 0);
 #else
-        return Value(_mkdir(path.c_str()) == 0);
+        return Value(_wmkdir(nimbleUtf8ToWide(path).c_str()) == 0);
 #endif
     }));
     g->define("rmdir", makeNative("rmdir", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) {
         if (!interp.permissions.allowFileSystemOps) throw NimbleError("rmdir(): disabled by the host (sandbox)");
         std::string path = interp.confinePath(reqStr(a, 0, "rmdir"), "rmdir");
+#ifdef _WIN32
+        return Value(_wrmdir(nimbleUtf8ToWide(path).c_str()) == 0);
+#else
         return Value(::rmdir(path.c_str()) == 0);
+#endif
     }));
 
     // ---- math ----
@@ -3886,19 +4606,45 @@ void Interpreter::setupGlobals() {
     // ---- json ----
     auto jsonMod = std::make_shared<MapObj>();
     jsonMod->set("encode", makeNative("encode", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) {
-        std::function<std::string(const Value&)> enc = [&](const Value& v) -> std::string {
+        // Antes: el escapado solo cubria '"' y '\\' (un "\n" real producia JSON
+        // invalido), las claves de mapa no se escapaban, NaN/Inf salian como
+        // `nan`/`inf` y cualquier valor no soportado (funcion, clase, objeto)
+        // se convertia en `null` en silencio. Ahora todo eso es un error claro.
+        const int MAX_DEPTH = 200; // tambien corta estructuras ciclicas
+        auto encStr = [](const std::string& str) {
+            std::string out = "\"";
+            for (unsigned char c : str) {
+                switch (c) {
+                    case '"':  out += "\\\""; break;
+                    case '\\': out += "\\\\"; break;
+                    case '\b': out += "\\b";  break;
+                    case '\f': out += "\\f";  break;
+                    case '\n': out += "\\n";  break;
+                    case '\r': out += "\\r";  break;
+                    case '\t': out += "\\t";  break;
+                    default:
+                        if (c < 0x20) { char buf[8]; snprintf(buf, sizeof(buf), "\\u%04x", c); out += buf; }
+                        else out += (char)c;
+                }
+            }
+            out += "\"";
+            return out;
+        };
+        std::function<std::string(const Value&, int)> enc = [&](const Value& v, int depth) -> std::string {
+            if (depth > MAX_DEPTH) throw NimbleError("json.encode: structure too deeply nested (or contains a cycle)");
             if (v.isNull()) return "null";
             if (v.isBool()) return v.asBool() ? "true" : "false";
-            if (v.isNum()) return numToStr(v.asNum());
-            if (v.isStr()) {
-                std::string out = "\"";
-                for (char c : v.asStr()) { if (c=='"'||c=='\\') out += '\\'; out += c; }
-                out += "\""; return out;
+            if (v.isNum()) {
+                double d = v.asNum();
+                if (std::isnan(d) || std::isinf(d))
+                    throw NimbleError("json.encode: cannot encode " + numToStr(d) + " (NaN/Infinity are not valid JSON)");
+                return numToStr(d);
             }
+            if (v.isStr()) return encStr(v.asStr());
             if (v.isList()) {
                 std::string out = "[";
                 auto& items = v.asList()->items;
-                for (size_t i = 0; i < items.size(); i++) { if (i) out += ","; out += enc(items[i]); }
+                for (size_t i = 0; i < items.size(); i++) { if (i) out += ","; out += enc(items[i], depth + 1); }
                 out += "]"; return out;
             }
             if (v.isMap()) {
@@ -3906,98 +4652,153 @@ void Interpreter::setupGlobals() {
                 auto& entries = v.asMap()->entries;
                 for (size_t i = 0; i < entries.size(); i++) {
                     if (i) out += ",";
-                    out += "\"" + entries[i].first + "\":" + enc(entries[i].second);
+                    out += encStr(entries[i].first) + ":" + enc(entries[i].second, depth + 1);
                 }
                 out += "}"; return out;
             }
-            return "null";
+            throw NimbleError(std::string("json.encode: cannot encode a value of type '") + typeName(v) + "'");
         };
-        return Value(enc(reqArg(a, 0, "json.encode")));
+        return Value(enc(reqArg(a, 0, "json.encode"), 0));
     }));
     jsonMod->set("decode", makeNative("decode", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) {
+        // Parser estricto (RFC 8259). Antes era laxo: strings sin cerrar,
+        // objetos/arrays sin cierre, ':' o ',' faltantes, comas finales,
+        // numeros como `+1`/`01`/`1.`, escapes invalidos y basura despues del
+        // valor se aceptaban en silencio devolviendo datos truncados.
         const std::string& s = reqStr(a, 0, "json.decode");
+        const int MAX_DEPTH = 200; // evita stack overflow con `[[[[...`
         size_t i = 0;
-        std::function<void()> skipWs = [&]() { while (i < s.size() && isspace((unsigned char)s[i])) i++; };
-        std::function<Value()> parseVal = [&]() -> Value {
-            skipWs();
-            if (i >= s.size()) throw NimbleError("Invalid JSON");
-            char c = s[i];
-            if (c == '"') {
-                i++; std::string out;
-                while (i < s.size() && s[i] != '"') {
-                    if (s[i] == '\\' && i + 1 < s.size()) { out += s[i+1]; i += 2; }
-                    else out += s[i++];
-                }
-                i++; return Value(out);
+        auto fail = [&](const std::string& msg) {
+            int ln = 1; size_t lastNl = std::string::npos;
+            for (size_t k = 0; k < i && k < s.size(); k++) if (s[k] == '\n') { ln++; lastNl = k; }
+            size_t col = (lastNl == std::string::npos ? i : i - lastNl - 1) + 1;
+            throw NimbleError("Invalid JSON: " + msg + " (line " + std::to_string(ln) + ", column " + std::to_string(col) + ")");
+        };
+        auto skipWs = [&]() { while (i < s.size() && (s[i]==' '||s[i]=='\t'||s[i]=='\n'||s[i]=='\r')) i++; };
+        auto appendUtf8 = [](std::string& out, unsigned cp) {
+            if (cp < 0x80) out += (char)cp;
+            else if (cp < 0x800) { out += (char)(0xC0 | (cp >> 6)); out += (char)(0x80 | (cp & 0x3F)); }
+            else if (cp < 0x10000) { out += (char)(0xE0 | (cp >> 12)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+            else { out += (char)(0xF0 | (cp >> 18)); out += (char)(0x80 | ((cp >> 12) & 0x3F)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+        };
+        auto hex4 = [&](size_t at, unsigned& cp) -> bool {
+            if (at + 4 > s.size()) return false;
+            cp = 0;
+            for (size_t k = 0; k < 4; k++) {
+                char h = s[at + k]; cp <<= 4;
+                if (h >= '0' && h <= '9') cp |= h - '0';
+                else if (h >= 'a' && h <= 'f') cp |= h - 'a' + 10;
+                else if (h >= 'A' && h <= 'F') cp |= h - 'A' + 10;
+                else return false;
             }
+            return true;
+        };
+        auto parseStr = [&]() -> std::string {
+            size_t startPos = i;
+            i++; // comilla de apertura
+            std::string out;
+            while (true) {
+                if (i >= s.size()) { i = startPos; fail("unterminated string (missing closing '\"')"); }
+                unsigned char c = s[i];
+                if (c == '"') { i++; return out; }
+                if (c < 0x20) fail("unescaped control character in string");
+                if (c != '\\') { out += (char)c; i++; continue; }
+                if (i + 1 >= s.size()) { i = startPos; fail("unterminated string (missing closing '\"')"); }
+                char e = s[i + 1];
+                switch (e) {
+                    case '"': out += '"'; break;
+                    case '\\': out += '\\'; break;
+                    case '/': out += '/'; break;
+                    case 'b': out += '\b'; break;
+                    case 'f': out += '\f'; break;
+                    case 'n': out += '\n'; break;
+                    case 'r': out += '\r'; break;
+                    case 't': out += '\t'; break;
+                    case 'u': {
+                        unsigned cp;
+                        if (!hex4(i + 2, cp)) { i += 1; fail("invalid \\u escape"); }
+                        i += 6;
+                        if (cp >= 0xD800 && cp <= 0xDBFF) {
+                            unsigned lo;
+                            if (i + 1 < s.size() && s[i] == '\\' && s[i+1] == 'u' && hex4(i + 2, lo) && lo >= 0xDC00 && lo <= 0xDFFF) {
+                                cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                                i += 6;
+                            } else fail("unpaired surrogate in \\u escape");
+                        } else if (cp >= 0xDC00 && cp <= 0xDFFF) fail("unpaired surrogate in \\u escape");
+                        appendUtf8(out, cp);
+                        continue;
+                    }
+                    default: i += 1; fail(std::string("invalid escape '\\") + e + "'");
+                }
+                i += 2;
+            }
+        };
+        std::function<Value(int)> parseVal = [&](int depth) -> Value {
+            if (depth > MAX_DEPTH) fail("nesting too deep");
+            skipWs();
+            if (i >= s.size()) fail("unexpected end of input");
+            char c = s[i];
+            if (c == '"') return Value(parseStr());
             if (c == '{') {
+                size_t openPos = i;
                 i++; auto m = std::make_shared<MapObj>(); skipWs();
                 if (i < s.size() && s[i] == '}') { i++; return Value(m); }
                 while (true) {
                     skipWs();
-                    Value key = parseVal();
-                    // NOTE (v0.9 fix): key.asStr() used to run unconditionally. A
-                    // syntactically-valid-looking-enough object with a non-string key
-                    // (e.g. `{1: 2}`, `{true: 1}`) parsed `key` as a number/bool via
-                    // the branches above, and then this call to asStr() -- std::get on
-                    // a variant not holding a string -- threw an uncaught
-                    // std::bad_variant_access and crashed the whole process. That is
-                    // exactly the class of crash this version's headline fix (bad
-                    // numeric input) was supposed to close for json.decode, just
-                    // reached through the key instead of the value. JSON object keys
-                    // are required to be strings by the spec, so this is also simply
-                    // correct validation, not just a defensive check.
-                    if (!key.isStr()) throw NimbleError("Invalid JSON: object keys must be strings");
-                    skipWs(); if (s[i] == ':') i++;
-                    Value val = parseVal();
-                    m->set(key.asStr(), val);
+                    if (i >= s.size()) { i = openPos; fail("unterminated object (missing '}')"); }
+                    if (s[i] != '"') fail("object keys must be strings");
+                    std::string key = parseStr();
+                    skipWs();
+                    if (i >= s.size() || s[i] != ':') fail("expected ':' after object key");
+                    i++;
+                    Value val = parseVal(depth + 1);
+                    m->set(key, val);
                     skipWs();
                     if (i < s.size() && s[i] == ',') { i++; continue; }
-                    break;
+                    if (i < s.size() && s[i] == '}') { i++; return Value(m); }
+                    if (i >= s.size()) { i = openPos; fail("unterminated object (missing '}')"); }
+                    fail("expected ',' or '}' in object");
                 }
-                skipWs(); if (i < s.size() && s[i] == '}') i++;
-                return Value(m);
             }
             if (c == '[') {
+                size_t openPos = i;
                 i++; auto l = std::make_shared<ListObj>(); skipWs();
                 if (i < s.size() && s[i] == ']') { i++; return Value(l); }
                 while (true) {
-                    Value val = parseVal();
-                    l->items.push_back(val);
+                    l->items.push_back(parseVal(depth + 1));
                     skipWs();
                     if (i < s.size() && s[i] == ',') { i++; continue; }
-                    break;
+                    if (i < s.size() && s[i] == ']') { i++; return Value(l); }
+                    if (i >= s.size()) { i = openPos; fail("unterminated array (missing ']')"); }
+                    fail("expected ',' or ']' in array");
                 }
-                skipWs(); if (i < s.size() && s[i] == ']') i++;
-                return Value(l);
             }
-            if (c == 't') {
-                if (s.compare(i, 4, "true") != 0) throw NimbleError("Invalid JSON");
-                i += 4; return Value(true);
-            }
-            if (c == 'f') {
-                if (s.compare(i, 5, "false") != 0) throw NimbleError("Invalid JSON");
-                i += 5; return Value(false);
-            }
-            if (c == 'n') {
-                if (s.compare(i, 4, "null") != 0) throw NimbleError("Invalid JSON");
-                i += 4; return Value();
-            }
+            if (c == 't') { if (s.compare(i, 4, "true") != 0) fail("invalid literal"); i += 4; return Value(true); }
+            if (c == 'f') { if (s.compare(i, 5, "false") != 0) fail("invalid literal"); i += 5; return Value(false); }
+            if (c == 'n') { if (s.compare(i, 4, "null") != 0) fail("invalid literal"); i += 4; return Value(); }
+            // Numero: -?(0|[1-9][0-9]*)(.[0-9]+)?([eE][+-]?[0-9]+)?
             size_t start = i;
-            while (i < s.size() && (isdigit((unsigned char)s[i]) || s[i]=='-' || s[i]=='.' || s[i]=='e' || s[i]=='E' || s[i]=='+')) i++;
-            // A malformed or empty numeric token here used to reach std::stod and
-            // throw std::invalid_argument/std::out_of_range uncaught, crashing the
-            // whole process (std::terminate) on any bad input -- e.g. an empty
-            // object member, or truncated JSON from an untrusted source like an
-            // HTTP response. Never let bad input take down the host process.
-            if (i == start) throw NimbleError("Invalid JSON");
+            auto digits = [&]() { size_t n = 0; while (i < s.size() && isdigit((unsigned char)s[i])) { i++; n++; } return n; };
+            if (i < s.size() && s[i] == '-') i++;
+            if (i < s.size() && s[i] == '0') i++;
+            else if (digits() == 0) { i = start; fail("unexpected character '" + std::string(1, c) + "'"); }
+            if (i < s.size() && s[i] == '.') { i++; if (digits() == 0) fail("digits expected after decimal point"); }
+            if (i < s.size() && (s[i] == 'e' || s[i] == 'E')) {
+                i++;
+                if (i < s.size() && (s[i] == '+' || s[i] == '-')) i++;
+                if (digits() == 0) fail("digits expected in exponent");
+            }
             try {
                 return Value(std::stod(s.substr(start, i - start)));
             } catch (...) {
-                throw NimbleError("Invalid JSON");
+                i = start; fail("number out of range");
+                return Value();
             }
         };
-        return parseVal();
+        Value result = parseVal(0);
+        skipWs();
+        if (i < s.size()) fail("unexpected data after JSON value");
+        return result;
     }));
     g->define("json", Value(jsonMod));
 
@@ -4014,12 +4815,12 @@ void Interpreter::setupGlobals() {
     // "basename" for any Windows-style path (C:\Users\foo\bar.txt), the same
     // class of silent-wrong-answer-on-Windows bug fixed in listdir().
     pathMod->set("basename", makeNative("basename", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) {
-        std::filesystem::path p(reqStr(a, 0, "path.basename"));
-        return Value(p.filename().string());
+        std::filesystem::path p = nimblePath(reqStr(a, 0, "path.basename"));
+        return Value(nimblePathStr(p.filename()));
     }));
     pathMod->set("dirname", makeNative("dirname", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) {
-        std::filesystem::path p(reqStr(a, 0, "path.dirname"));
-        std::string parent = p.parent_path().string();
+        std::filesystem::path p = nimblePath(reqStr(a, 0, "path.dirname"));
+        std::string parent = nimblePathStr(p.parent_path());
         return Value(parent.empty() ? std::string(".") : parent);
     }));
     g->define("path", Value(pathMod));
@@ -4104,6 +4905,19 @@ void Interpreter::setupGlobals() {
         return Value(out);
     }));
     g->define("hex", Value(hexMod));
+
+    // ---- hash ----
+    auto hashMod = std::make_shared<MapObj>();
+    // hash.md5(datos) -> string hex de 32 caracteres (minusculas)
+    hashMod->set("md5", makeNative("md5", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) {
+        return Value(toHexLower(md5Raw(reqStr(a, 0, "hash.md5"))));
+    }));
+    // hash.md5_raw(datos) -> los 16 bytes del digest como string (para
+    // encadenar con hex.encode, construir HMAC a mano, etc.)
+    hashMod->set("md5_raw", makeNative("md5_raw", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) {
+        return Value(md5Raw(reqStr(a, 0, "hash.md5_raw")));
+    }));
+    g->define("hash", Value(hashMod));
 
     // ---- env ----
     auto envMod = std::make_shared<MapObj>();
@@ -4281,7 +5095,14 @@ void Interpreter::setupGlobals() {
         socket_t fd = ::socket(AF_INET, SOCK_STREAM, 0);
         if (fd == NIMBLE_INVALID_SOCKET) throw NimbleError("net.tcp_listen(): " + nimbleSocketErr());
         int yes = 1;
+#ifdef _WIN32
+        // En Windows SO_REUSEADDR deja que DOS procesos escuchen en el mismo
+        // puerto sin error; lo equivalente a lo que hace en Linux es
+        // SO_EXCLUSIVEADDRUSE (un segundo server en un puerto ocupado falla).
+        setsockopt(fd, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&yes, sizeof(yes));
+#else
         setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
+#endif
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_port = htons((uint16_t)port);
@@ -4304,6 +5125,98 @@ void Interpreter::setupGlobals() {
         auto sock = std::make_shared<NetSocket>();
         sock->fd = fd;
         return nimbleMakeServer(sock, (int)ntohs(bound.sin_port));
+    }));
+    netMod->set("poll", makeNative("poll", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
+        // Multiplexa N sockets (server/conn/udp, mezclados sin problema, ya
+        // que los tres exponen "fd") sin threads: bloquea hasta que alguno
+        // tenga datos para leer (o una conexion nueva, para un server) o se
+        // cumpla el timeout. Es lo que permite atender a mas de un cliente
+        // sin que server.accept()/conn.recv() de uno bloqueen a los demas
+        // -- el limite de "un cliente a la vez" que tienen manga_server.nimble
+        // y web_server.nimble es justamente no tener esto.
+        //
+        // v0.16: cada item de la lista puede ser un socket "pelado" (server/
+        // conn/udp -- igual que siempre, se interpreta como "avisame si hay
+        // algo para leer") o un dict {"sock": conn, "read": bool, "write":
+        // bool} para cuando el script tambien necesita saber si puede
+        // escribir en ese socket sin bloquear (ver conn.send_nb()). Antes no
+        // habia forma de pedir eso: net.poll() solo armaba POLLIN, asi que
+        // un script que manda datos a muchas conexiones a la vez no tenia
+        // como evitar que una lenta frenara a las demas dentro de un mismo
+        // conn.send() bloqueante. "read"/"write" son opcionales -- un dict
+        // sin ninguno de los dos pide "read" por defecto, igual que un
+        // socket pelado.
+        auto socks = reqList(a, 0, "net.poll");
+        double timeoutSec = a.size() > 1 ? reqNum(a, 1, "net.poll") : -1.0; // <0 = bloquear sin limite
+        int timeoutMs = timeoutSec < 0 ? -1 : (int)(timeoutSec * 1000.0);
+
+#ifdef _WIN32
+        std::vector<WSAPOLLFD> pfds;
+#else
+        std::vector<pollfd> pfds;
+#endif
+        // specs[i] == nullptr  -> socks->items[i] era un socket pelado.
+        // specs[i] != nullptr  -> socks->items[i] era un dict {"sock":...};
+        // specs[i] apunta al MapObj de ese dict para poder escribirle
+        // "readable"/"writable" antes de devolverlo.
+        std::vector<std::shared_ptr<MapObj>> specs;
+        pfds.reserve(socks->items.size());
+        specs.reserve(socks->items.size());
+        for (auto& v : socks->items) {
+            if (v.isMap() && v.asMap()->has("fd")) {
+                pfds.push_back({(socket_t)(long long)v.asMap()->get("fd").asNum(), POLLIN, 0});
+                specs.push_back(nullptr);
+                continue;
+            }
+            if (v.isMap() && v.asMap()->has("sock") && v.asMap()->get("sock").isMap() &&
+                v.asMap()->get("sock").asMap()->has("fd")) {
+                auto spec = v.asMap();
+                auto sockMap = spec->get("sock").asMap();
+                bool wantRead = spec->has("read") ? truthy(spec->get("read")) : true;
+                bool wantWrite = spec->has("write") ? truthy(spec->get("write")) : false;
+                if (!wantRead && !wantWrite)
+                    throw NimbleError("net.poll(): el dict debe pedir \"read\" y/o \"write\"");
+                short events = (short)((wantRead ? POLLIN : 0) | (wantWrite ? POLLOUT : 0));
+                pfds.push_back({(socket_t)(long long)sockMap->get("fd").asNum(), events, 0});
+                specs.push_back(spec);
+                continue;
+            }
+            throw NimbleError("net.poll(): la lista debe contener sockets (server/conn/udp) o dicts {\"sock\": conn, \"read\": bool, \"write\": bool}");
+        }
+
+#ifdef _WIN32
+        int rc = 0;
+        if (pfds.empty()) {
+            // poll() de POSIX con lista vacia solo espera; WSAPoll la rechaza.
+            if (timeoutMs != 0) Sleep(timeoutMs < 0 ? INFINITE : (DWORD)timeoutMs);
+        } else {
+            rc = WSAPoll(pfds.data(), (ULONG)pfds.size(), timeoutMs);
+        }
+#else
+        int rc = ::poll(pfds.data(), pfds.size(), timeoutMs);
+#endif
+        if (rc < 0) throw NimbleError("net.poll(): " + nimbleSocketErr());
+
+        auto out = std::make_shared<ListObj>();
+        for (size_t i = 0; i < pfds.size(); i++) {
+            // POLLHUP/POLLERR cuentan como "listo" para los dos lados: el
+            // socket esta en un estado que el script solo puede terminar de
+            // diagnosticar llamando a recv()/send_nb() (que van a devolver 0
+            // o tirar error), no quedandose sin ser notificado.
+            bool hup = (pfds[i].revents & (POLLHUP | POLLERR)) != 0;
+            bool sawRead = hup || (pfds[i].revents & POLLIN) != 0;
+            bool sawWrite = hup || (pfds[i].revents & POLLOUT) != 0;
+            if (!specs[i]) {
+                if (sawRead) out->items.push_back(socks->items[i]); // socket pelado: comportamiento de siempre
+                continue;
+            }
+            if (sawRead || sawWrite) {
+                specs[i]->set("readable", Value(sawRead));
+                specs[i]->set("writable", Value(sawWrite));
+                out->items.push_back(socks->items[i]);
+            }
+        }
+        return Value(out);
     }));
     netMod->set("tcp_connect", makeNative("tcp_connect", [](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter& interp) -> Value {
         if (!interp.permissions.allowNetwork) throw NimbleError("net.tcp_connect(): disabled by the host (sandbox)");
@@ -4353,6 +5266,7 @@ void Interpreter::setupGlobals() {
         sock->fd = fd;
 
         auto m = std::make_shared<MapObj>();
+        m->set("fd", Value((double)sock->fd)); // uso interno de net.poll()
         m->set("port", Value((double)ntohs(bound.sin_port)));
         m->set("send_to", makeNative("send_to", [sock](std::vector<Value>& a, std::vector<std::pair<std::string,Value>>&, Interpreter&) -> Value {
             if (sock->fd == NIMBLE_INVALID_SOCKET) throw NimbleError("udp.send_to(): el socket ya está cerrado");
@@ -4433,7 +5347,7 @@ void Interpreter::setupGlobals() {
 // main / REPL
 // ============================================================
 static std::string readFile(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
+    std::ifstream f(nimblePath(path), std::ios::binary);
     if (!f) throw NimbleError("Could not open file: " + path);
     std::ostringstream ss; ss << f.rdbuf();
     return ss.str();
@@ -4456,7 +5370,7 @@ static void printError(const NimbleError& e) {
 static void runRepl() {
     Interpreter interp;
     std::string buffer;
-    std::cout << "Nimble REPL (v0.10) -- type 'exit' to quit\n";
+    std::cout << "Nimble REPL (v0.20) -- type 'exit' to quit\n";
     while (true) {
         std::cout << (buffer.empty() ? "> " : "... ");
         std::cout.flush();
@@ -4508,11 +5422,54 @@ static void runRepl() {
 }
 
 #ifndef NIMBLE_NO_MAIN
+#ifdef _WIN32
+// Pone la consola en UTF-8 mientras corre el programa y la restaura al salir
+// (si no, el cambio le queda a la sesion de cmd/PowerShell que lo lanzo).
+struct NimbleConsoleUtf8 {
+    UINT oldOut = 0, oldIn = 0;
+    bool active = false;
+    void enable() {
+        oldOut = GetConsoleOutputCP(); oldIn = GetConsoleCP();
+        if (oldOut != 0) { SetConsoleOutputCP(CP_UTF8); SetConsoleCP(CP_UTF8); active = true; }
+    }
+    ~NimbleConsoleUtf8() { if (active) { SetConsoleOutputCP(oldOut); SetConsoleCP(oldIn); } }
+};
+#endif
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    static NimbleConsoleUtf8 consoleGuard;
+    consoleGuard.enable();
+#endif
+#ifndef _WIN32
+    // Sin esto: escribir con send()/write() a un socket cuyo otro lado ya
+    // cerro la conexion manda SIGPIPE al proceso, que por default lo mata
+    // de inmediato -- sin pasar por ningun try/catch de Nimble, porque una
+    // senal de sistema no es una excepcion de C++. Cualquier script que
+    // mande datos a un cliente que se desconecto (un server con varios
+    // clientes, tipico de net.poll()) se caia entero por esto. Ignorarla
+    // hace que send()/::write() devuelvan -1 con errno=EPIPE en su lugar,
+    // que conn.send() ya convierte en un NimbleError atrapable normal.
+    signal(SIGPIPE, SIG_IGN);
+#endif
+    // argv en UTF-8. En Windows main() recibe argv en la pagina ANSI, asi que
+    // se relee la linea de comandos completa como UTF-16 y se convierte.
+    std::vector<std::string> argvUtf8;
+#ifdef _WIN32
+    {
+        int wargc = 0;
+        LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+        if (wargv) {
+            for (int i = 0; i < wargc; i++) argvUtf8.push_back(nimbleWideToUtf8(wargv[i]));
+            LocalFree(wargv);
+        }
+    }
+#endif
+    if (argvUtf8.empty()) for (int i = 0; i < argc; i++) argvUtf8.push_back(argv[i]);
+
     std::vector<std::string> args;
     bool noWarn = false;
-    for (int i = 1; i < argc; i++) {
-        std::string a = argv[i];
+    for (size_t i = 1; i < argvUtf8.size(); i++) {
+        std::string a = argvUtf8[i];
         if (a == "--no-warn") { noWarn = true; continue; }
         args.push_back(a);
     }
@@ -4548,7 +5505,7 @@ int main(int argc, char** argv) {
         for (size_t i = fileIdx; i < args.size(); i++) interpArgs.push_back(args[i]);
 
         Interpreter interp(interpArgs);
-        interp.scriptDir = std::filesystem::path(filePath).parent_path().string();
+        interp.scriptDir = nimblePathStr(nimblePath(filePath).parent_path());
         if (interp.scriptDir.empty()) interp.scriptDir = ".";
 
         interp.run(program);
